@@ -7,16 +7,6 @@ export interface Usuario {
   foto_url?: string
 }
 
-export interface Perfil {
-  id: string
-  nome?: string
-  email?: string
-  cargo?: string
-  criado_em?: string
-  foto_url?: string
-  role?: string
-  id_setor?: string
-}
 
 // ======================
 // Estrutura Organizacional
