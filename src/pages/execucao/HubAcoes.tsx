@@ -72,6 +72,8 @@ interface Etapa {
 
   nm_responsavel: string;
   nm_status_etapa: string;
+  created_at: string;
+  updated_at: string;
 }
 
 
