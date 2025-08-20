@@ -173,3 +173,15 @@ export interface Glosa {
   created_at: string
   updated_at: string
 }
+
+export interface AcaoDetalhe extends Acao {
+  nm_status_acao?: string | null
+  nm_responsavel?: string | null
+  // Não existe nm_operadora na view; se precisar exibir nome da operadora,
+  // crie uma view que faça join com operadoras e exponha nm_operadora.
+}
+
+export interface EtapaDetalhe extends Etapa {
+  nm_responsavel?: string | null
+  nm_status_etapa?: string | null
+}
