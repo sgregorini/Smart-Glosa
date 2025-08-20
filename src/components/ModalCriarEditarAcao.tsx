@@ -21,7 +21,7 @@ import {
   SelectItem,
 } from '@/components/ui/select'
 
-import type { Acao } from 'types'
+import type { Acao } from '@/types'
 
 interface ModalCriarEditarAcaoProps {
   open: boolean
