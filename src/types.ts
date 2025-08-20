@@ -7,15 +7,6 @@ export interface Usuario {
   foto_url?: string
 }
 
-export interface UsuarioPerfil {
-  id: string
-  nome: string
-  cargo?: string
-  criado_em?: string
-  role_id?: string
-  user_id?: string
-}
-
 export interface Perfil {
   id: string
   nome?: string
