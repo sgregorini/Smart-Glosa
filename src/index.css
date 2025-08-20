@@ -2,22 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fontes customizadas */
+/* =========================
+   Fontes customizadas
+   ========================= */
 @font-face {
   font-family: 'Akko Pro Medium Condensed';
   src: url('/fonts/AkkoPro-MediumCondensed.ttf') format('truetype');
+  font-display: swap;
 }
 @font-face {
   font-family: 'Roboto Condensed';
   src: url('/fonts/RobotoCondensed-Regular.ttf') format('truetype');
+  font-display: swap;
 }
 
-body {
-  @apply font-robotoCondensed bg-white text-brand-black;
-}
-
-
-
+/* =========================
+   Design tokens (shadcn-style)
+   ========================= */
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -39,13 +40,16 @@ body {
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
+
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
+
     --radius: 0.5rem;
   }
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -66,6 +70,7 @@ body {
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 212.7 26.8% 83.9%;
+
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
@@ -74,13 +79,24 @@ body {
   }
 }
 
-
-
+/* =========================
+   Resets & base
+   ========================= */
 @layer base {
   * {
     @apply border-border;
+    border-color: hsl(var(--border));
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-robotoCondensed;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+/* Opcional: classe utilitária para títulos com Akko */
+@layer utilities {
+  .font-akko {
+    font-family: 'Akko Pro Medium Condensed', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
   }
 }

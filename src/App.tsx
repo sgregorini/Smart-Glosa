@@ -2,33 +2,68 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Layout from './components/Layout'
-import HubAcoes from './pages/execucao/HubAcoes';
+import HubAcoes from './pages/execucao/HubAcoes'
+import { useAuth } from '@/context/AuthContext'
+import ConfiguracoesMestre from './pages/Configuracoes/ConfiguracoesMestre'
+import ConfiguracoesUsuarios from './pages/Configuracoes/ConfiguracoesUsuarios'
+import MeuPerfil from './pages/Configuracoes/MeuPerfil'
+
+function BootScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="animate-pulse text-gray-600 text-sm">Carregando…</div>
+    </div>
+  )
+}
+
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const { user, booted } = useAuth()
+  if (!booted) return <BootScreen />   // ✅ só bloqueia no boot inicial
+  if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { user, booted } = useAuth()
+  if (!booted) return <BootScreen />   // ✅ evita piscar entre login <-> app
+  if (user) return <Navigate to="/" replace />
+  return <>{children}</>
+}
 
 export default function App() {
-  const isAuthenticated = /* aqui você pode checar um flag no localStorage, Context ou estado global */
-    Boolean(localStorage.getItem('loggedIn'))
-
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        {/* rota pública */}
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
 
-        {/* ROTAS PROTEGIDAS */}
+        {/* rotas privadas (todas dentro do Layout) */}
         <Route
           element={
-            isAuthenticated
-              ? <Layout />
-              : <Navigate to="/login" replace />
+            <PrivateRoute>
+              <Layout />
+            </PrivateRoute>
           }
         >
-          <Route path="/" element={<Dashboard />} />
-          {/* outras páginas internas */}
+          <Route index element={<Dashboard />} />
           <Route path="execucao/hub" element={<HubAcoes />} />
-        </Route>
 
-        {/* se não achar rota, manda pro login */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
+          {/* Configurações */}
+          <Route path="configuracoes">
+            <Route path="mestre" element={<ConfiguracoesMestre />} />
+            <Route path="usuarios" element={<ConfiguracoesUsuarios />} />
+            <Route path="meu-perfil" element={<MeuPerfil />} />   {/* 👈 novo */}
+          </Route>
+        </Route>
       </Routes>
     </BrowserRouter>
   )
 }
+

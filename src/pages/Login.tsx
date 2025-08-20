@@ -1,49 +1,33 @@
-import React, { useState } from 'react';
-import { supabase } from '@/lib/supabaseClient'; // ajuste o caminho se necessário
-import { Menu } from 'lucide-react';
+import React, { useState } from 'react'
+import { Menu } from 'lucide-react'
+import { useAuth } from '@/context/AuthContext'
+import { useNavigate } from 'react-router-dom'
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const { login, authenticating } = useAuth()
+  const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
+    e.preventDefault()
+    setError(null)
 
-    const { data: usuario, error: fetchError } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('email', email)
-      .single();
-
-    if (fetchError || !usuario) {
-      setError('E-mail ou senha inválidos.');
-      setLoading(false);
-      return;
+    const success = await login(email, password)
+    if (!success) {
+      setError('E-mail ou senha inválidos.')
+      return
     }
-
-    if (usuario.senha !== password) {
-      setError('E-mail ou senha inválidos.');
-      setLoading(false);
-      return;
-    }
-
-    localStorage.setItem('loggedIn', 'true');
-    localStorage.setItem('usuario_id', usuario.id);
-    localStorage.setItem('usuario_nome', usuario.nome);
-
-    // Redireciona com recarregamento forçado
-    window.location.href = '/';
-  };
+    navigate('/', { replace: true })
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Top bar */}
       <header className="flex justify-between items-center px-6 py-4 bg-white shadow-sm">
-        <button aria-label="Menu">
+        <button aria-label="Menu" type="button">
           <Menu size={24} className="text-gray-600" />
         </button>
         <img src="/assets/logo_clara.png" alt="Exímio" className="h-20" />
@@ -74,7 +58,10 @@ export default function Login() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1" htmlFor="email">
+              <label
+                className="block text-sm font-medium text-gray-600 mb-1"
+                htmlFor="email"
+              >
                 E-mail
               </label>
               <input
@@ -83,12 +70,16 @@ export default function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full h-12 border border-gray-300 rounded-lg px-4 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                disabled={authenticating}
+                className="w-full h-12 border border-gray-300 rounded-lg px-4 focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:opacity-60"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1" htmlFor="password">
+              <label
+                className="block text-sm font-medium text-gray-600 mb-1"
+                htmlFor="password"
+              >
                 Senha
               </label>
               <input
@@ -97,16 +88,17 @@ export default function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-12 border border-gray-300 rounded-lg px-4 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                disabled={authenticating}
+                className="w-full h-12 border border-gray-300 rounded-lg px-4 focus:outline-none focus:ring-2 focus:ring-yellow-400 disabled:opacity-60"
               />
             </div>
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full h-12 bg-yellow-400 text-white text-lg font-medium rounded-lg hover:bg-yellow-500 transition"
+              disabled={authenticating}
+              className="w-full h-12 bg-yellow-400 text-white text-lg font-medium rounded-lg hover:bg-yellow-500 transition disabled:opacity-70"
             >
-              {loading ? 'Entrando...' : 'Entrar'}
+              {authenticating ? 'Entrando...' : 'Entrar'}
             </button>
 
             <p className="text-xs text-gray-500 text-center">
@@ -116,5 +108,5 @@ export default function Login() {
         </div>
       </main>
     </div>
-  );
+  )
 }
