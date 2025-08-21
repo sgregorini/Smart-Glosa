@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Pencil, Trash2, Plus } from 'lucide-react'
 
@@ -29,6 +29,14 @@ const ROLE_OPTIONS = [
   { value: 'viewer', label: 'Somente leitura' },
 ]
 
+// gera senha forte quando o campo vier em branco (evita 400 da Edge Function)
+function gerarSenhaTemporaria() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*?'
+  let s = 'Tmp!'
+  for (let i = 0; i < 12; i++) s += chars[Math.floor(Math.random() * chars.length)]
+  return s
+}
+
 export default function ConfiguracoesUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [setores, setSetores] = useState<Setor[]>([])
@@ -50,7 +58,7 @@ export default function ConfiguracoesUsuarios() {
   const [newNome, setNewNome] = useState('')
   const [newRole, setNewRole] = useState('user')
   const [newSetor, setNewSetor] = useState<string>('')
-  const [newPassword, setNewPassword] = useState('') // opcional; se vazio, envia convite
+  const [newPassword, setNewPassword] = useState('') // se vazio, geramos senha temporária
 
   const fetchAll = async () => {
     setLoading(true)
@@ -58,8 +66,8 @@ export default function ConfiguracoesUsuarios() {
       supabase.from('vw_usuarios_detalhes').select('*').order('created_at', { ascending: false }),
       supabase.from('setores').select('id, nome').order('nome'),
     ])
-    if (eu) console.error(eu)
-    if (es) console.error(es)
+    if (eu) console.error('[vw_usuarios_detalhes] erro:', eu)
+    if (es) console.error('[setores] erro:', es)
     setUsuarios((u as Usuario[]) ?? [])
     setSetores((s as Setor[]) ?? [])
     setLoading(false)
@@ -85,46 +93,87 @@ export default function ConfiguracoesUsuarios() {
     if (!editing) return
     const { error } = await supabase.from('usuarios').upsert({
       id: editing.id,
-      nome,
+      nome: nome?.trim() || null,
       role: role || null,
       id_setor: idSetor || null,
     })
-    if (error) console.error(error)
+    if (error) console.error('[usuarios.upsert] erro:', error)
     setOpenEdit(false)
     fetchAll()
   }
 
   const confirmDelete = async () => {
-    if (!deleting) return
-    // Exclui no Auth (requer privilégios de Admin API; funciona se seu supabaseClient estiver com service role no backend.
-    // No front, normalmente não é possível; considere criar outra edge function de delete se precisar.)
-    const { error } = await supabase.auth.admin.deleteUser(deleting.id)
-    if (error) console.error(error)
-    setDeleting(null)
-    fetchAll()
-  }
+      if (!deleting) return;
 
-  const createUser = async () => {
-    // Chama Edge Function 'create-user'. Se password vazio => convite por e-mail.
-    const { data, error } = await supabase.functions.invoke('create-user', {
-      body: {
-        email: newEmail,
-        password: newPassword || null,
-        nome: newNome || null,
-        role: newRole || 'user',
-        id_setor: newSetor || null,
-      },
-    })
-    if (error) {
-      console.error(error)
-      alert('Erro ao criar usuário: ' + error.message)
-      return
+      // Call the Edge Function to handle the deletion securely on the server.
+      try {
+          const { data, error } = await supabase.functions.invoke('delete-user', {
+              method: 'POST',
+              body: { id: deleting.id },
+          });
+
+          if (error) {
+              console.error('[invoke-delete] erro:', error);
+              // Provide a user-friendly message.
+              alert('Não foi possível excluir o usuário. Por favor, tente novamente ou entre em contato com o suporte.');
+              return;
+          }
+
+          console.log('[invoke-delete] ok:', data);
+
+      } catch (e) {
+          console.error('[invoke-delete] exception:', e);
+          alert('Erro ao se conectar com o servidor. Verifique sua conexão.');
+      } finally {
+          // Clear the state and refresh the list regardless of success or failure.
+          setDeleting(null);
+          fetchAll();
+      }
+  };
+
+const createUser = async () => {
+    const email = String(newEmail ?? '').trim();
+    const nome = String(newNome ?? '').trim();
+    const password = String(newPassword ?? '');
+    const role = newRole || 'user';
+    const id_setor = newSetor || null;
+
+    if (!email || !nome) {
+      alert('Preencha Email e Nome.');
+      return;
     }
+
+    if (password && password.length < 6) {
+      alert('A senha deve ter pelo menos 6 caracteres, ou deixe em branco para enviar convite.');
+      return;
+    }
+
+    const payload = { email, password, nome, role, id_setor };
+    console.log('[create-user] payload =>', JSON.stringify(payload));
+
+    const { data, error } = await supabase.functions.invoke('create-user', {
+      method: 'POST',
+      body: payload,
+    });
+
+    if (error) {
+      console.error('[invoke] erro:', error);
+      alert(`Erro ao criar usuário: ${error.message}`);
+      return;
+    }
+
+    console.log('[create-user] ok:', data);
+
     // Limpa e fecha
-    setOpenCreate(false)
-    setNewEmail(''); setNewPassword(''); setNewNome(''); setNewRole('user'); setNewSetor('')
-    fetchAll()
-  }
+    setOpenCreate(false);
+    setNewEmail('');
+    setNewPassword('');
+    setNewNome('');
+    setNewRole('user');
+    setNewSetor('');
+    fetchAll();
+};
+
 
   return (
     <div className="space-y-6">
@@ -178,6 +227,7 @@ export default function ConfiguracoesUsuarios() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar usuário</DialogTitle>
+            <DialogDescription>Atualize nome, perfil e setor do usuário selecionado.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -223,6 +273,7 @@ export default function ConfiguracoesUsuarios() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Excluir usuário</DialogTitle>
+            <DialogDescription>Essa ação remove o usuário do Auth. Recomendado fazer via Edge Function.</DialogDescription>
           </DialogHeader>
           <p className="text-sm text-gray-600">
             Tem certeza que deseja excluir "{deleting?.email}"?
@@ -239,6 +290,7 @@ export default function ConfiguracoesUsuarios() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Adicionar usuário</DialogTitle>
+            <DialogDescription>Preencha e-mail e nome. Se a senha ficar em branco, geramos uma temporária.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -278,7 +330,7 @@ export default function ConfiguracoesUsuarios() {
               <label className="text-sm text-gray-600">Senha (opcional)</label>
               <Input
                 type="password"
-                placeholder="Deixe vazio para enviar convite por e-mail"
+                placeholder="Se ficar vazio, geramos uma temporária"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
               />

@@ -1,11 +1,19 @@
-// src/context/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Perfil } from '@/types'
+
+// Interface mínima do que queremos ter disponível
+interface UsuarioPerfil {
+  id: string
+  nome: string | null
+  foto_url: string | null
+  role: string | null
+  id_setor: string | null
+  criado_em: string | null
+}
 
 interface AuthContextType {
   user: any | null
-  perfil: Perfil | null
+  perfil: UsuarioPerfil | null
   booted: boolean
   loading: boolean
   authenticating: boolean
@@ -17,75 +25,76 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<any | null>(null)
-  const [perfil, setPerfil] = useState<Perfil | null>(null)
+  const [perfil, setPerfil] = useState<UsuarioPerfil | null>(null)
 
-  const [booted, setBooted] = useState(false)      // ✅ app pronto após 1ª hidratação
-  const [loading, setLoading] = useState(false)    // ✅ só durante login()
+  const [booted, setBooted] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [authenticating, setAuthenticating] = useState(false)
 
   const handledInitialRef = useRef(false)
   const currentUserIdRef = useRef<string | null>(null)
   const loginInFlightRef = useRef(false)
 
-  // 🔑 Busca o perfil na view (usuarios_perfis)
-// ⬇️ SUBSTITUA seu fetchPerfilById por este
-const fetchPerfilById = async (uid: string): Promise<Perfil | null> => {
-  const { data, error } = await supabase
-    .from('usuarios')
-    // 'cargo' NÃO existe nessa tabela; remova
-    .select('id, nome, criado_em:created_at, foto_url, role, id_setor')
-    .eq('id', uid)
-    .maybeSingle()
-
-  if (error) {
-    console.warn('[Auth] erro ao buscar perfil:', error.message)
-    return null
-  }
-  return (data as Perfil) ?? null
-}
-
-
-const ensureUsuarioRecord = async (usr: any) => {
-  if (!usr) return
-
-  // 1) tenta buscar a linha atual
-  const { data: row, error: selErr } = await supabase
-    .from('usuarios')
-    .select('id, nome')
-    .eq('id', usr.id)
-    .maybeSingle()
-
-  if (selErr) {
-    console.warn('[Auth] ensureUsuarioRecord select error:', selErr.message)
-    return
-  }
-
-  // fallback só para primeira gravação / quando estiver vazio
-  const fallbackName =
-    usr.user_metadata?.full_name ||
-    (usr.email ? String(usr.email).split('@')[0] : null)
-
-  if (!row) {
-    // 2) não existe -> insere uma vez
-    const { error: insErr } = await supabase.from('usuarios').insert({
-      id: usr.id,
-      nome: fallbackName,
-    })
-    if (insErr) console.warn('[Auth] insert usuarios error:', insErr.message)
-    return
-  }
-
-  if (!row.nome || !row.nome.trim()) {
-    // 3) existe mas nome está vazio -> preenche uma vez
-    const { error: updErr } = await supabase
+  // 🔑 Busca o perfil direto da tabela `usuarios`
+  const fetchPerfilById = async (uid: string): Promise<UsuarioPerfil | null> => {
+    const { data, error } = await supabase
       .from('usuarios')
-      .update({ nome: fallbackName })
-      .eq('id', usr.id)
-    if (updErr) console.warn('[Auth] update usuarios error:', updErr.message)
+      .select('id, nome, created_at, foto_url, role, id_setor')
+      .eq('id', uid)
+      .maybeSingle()
+
+    if (error) {
+      console.warn('[Auth] erro ao buscar perfil:', error.message)
+      return null
+    }
+
+    if (!data) return null
+
+    return {
+      id: data.id,
+      nome: data.nome,
+      foto_url: data.foto_url,
+      role: data.role,
+      id_setor: data.id_setor,
+      criado_em: data.created_at,
+    }
   }
 
-  // 4) se já tem nome -> NÃO faz nada (não sobrescreve!)
-}
+  const ensureUsuarioRecord = async (usr: any) => {
+    if (!usr) return
+
+    const { data: row, error: selErr } = await supabase
+      .from('usuarios')
+      .select('id, nome')
+      .eq('id', usr.id)
+      .maybeSingle()
+
+    if (selErr) {
+      console.warn('[Auth] ensureUsuarioRecord select error:', selErr.message)
+      return
+    }
+
+    const fallbackName =
+      usr.user_metadata?.full_name ||
+      (usr.email ? String(usr.email).split('@')[0] : null)
+
+    if (!row) {
+      const { error: insErr } = await supabase.from('usuarios').insert({
+        id: usr.id,
+        nome: fallbackName,
+      })
+      if (insErr) console.warn('[Auth] insert usuarios error:', insErr.message)
+      return
+    }
+
+    if (!row.nome || !row.nome.trim()) {
+      const { error: updErr } = await supabase
+        .from('usuarios')
+        .update({ nome: fallbackName })
+        .eq('id', usr.id)
+      if (updErr) console.warn('[Auth] update usuarios error:', updErr.message)
+    }
+  }
 
   useEffect(() => {
     let mounted = true
@@ -180,7 +189,7 @@ const ensureUsuarioRecord = async (usr: any) => {
     }
   }, []) // eslint-disable-line
 
-  const login = async (email: string, password: string) => {
+ const login = async (email: string, password: string) => {
     setAuthenticating(true)
     loginInFlightRef.current = true
     try {
@@ -207,33 +216,20 @@ const ensureUsuarioRecord = async (usr: any) => {
     }
   }
 
-
-const logout = async () => {
-  try {
-    // 1) Sai do Supabase
-    const { error } = await supabase.auth.signOut()
-    if (error) {
-      console.warn('[Auth] erro no signOut:', error.message)
-    }
-  } finally {
-    // 2) Zera tudo no app (antes mesmo do evento chegar)
-    setUser(null)
-    setPerfil(null)
-    currentUserIdRef.current = null
-
-    // 3) Limpa qualquer storage próprio seu
-    localStorage.removeItem('smartglosa.auth')
-    sessionStorage.removeItem('smartglosa.auth')
-
-    // 4) (opcional) zera o cache do supabase-js (às vezes ajuda em dev)
+  const logout = async () => {
     try {
-      const { data } = await supabase.auth.getSession()
-      if (data?.session) {
-        console.warn('[Auth] sessão ainda presente após signOut (dev cache).')
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.warn('[Auth] erro no signOut:', error.message)
       }
-    } catch {}
+    } finally {
+      setUser(null)
+      setPerfil(null)
+      currentUserIdRef.current = null
+      localStorage.removeItem('smartglosa.auth')
+      sessionStorage.removeItem('smartglosa.auth')
+    }
   }
-}
 
   return (
     <AuthContext.Provider value={{ user, perfil, booted, loading, authenticating, login, logout }}>
