@@ -3,9 +3,8 @@ import { useState } from 'react';
 // Defina aqui os GUIDs puros das páginas do seu relatório conforme URL sem o prefixo ReportSection
 const pages = [
   { id: 'inicial', label: 'Glosa Inicial', pageName: 'f79f6b269b6876e42ae7' },
-  { id: 'unidade', label: 'Glosa Inicial por Unidade', pageName: '167dc818720630a3103c' },
-  { id: 'status',  label: 'Status WR', pageName: 'f6d7aa3801845139059e' },
-  { id: 'planoa',  label: 'Plano de Ação', pageName: '8bea7da20e4393c95729' },
+  { id: 'rede', label: 'Rede', pageName: 'b1981a68cd38736b503c' },
+  { id: 'deepdive',  label: 'DeepDive', pageName: '76378640e8c62a211737' },
 ];
 
 export default function Dashboard() {
@@ -13,7 +12,7 @@ export default function Dashboard() {
 
   // Base da URL de embed sem pageName
   const reportBaseUrl =
-    'https://app.powerbi.com/reportEmbed?reportId=0a417ed0-1a13-4007-b898-d6e86f355b3f&autoAuth=true&ctid=a743694b-8593-4647-bafb-ad9faa1cc904';
+    'https://app.powerbi.com/reportEmbed?reportId=98cece73-d6dd-40c1-9a0b-3dc84d71af50&autoAuth=true&ctid=a743694b-8593-4647-bafb-ad9faa1cc904';
 
   // Monta a URL completa incluindo pageName e ocultando a navegação interna do Power BI
   const current = pages.find(p => p.id === activeTab);

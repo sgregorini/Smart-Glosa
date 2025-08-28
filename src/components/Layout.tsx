@@ -1,6 +1,6 @@
 // src/components/Layout.tsx
 import React, { useEffect, useState } from 'react'
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
   BarChart2,
   Play,
@@ -46,6 +46,10 @@ export default function Layout() {
   return raw ? raw === '1' : false
 })
 
+  const location = useLocation()
+  const isDesempenhoActive = location.pathname === '/' || location.pathname.startsWith('/analytics')
+  const isExecucaoActive = location.pathname.startsWith('/execucao')
+  const isConfigActive = location.pathname.startsWith('/configuracoes')
 
   useEffect(() => {
     localStorage.setItem('sg_sidebar_collapsed', collapsed ? '1' : '0')
@@ -124,8 +128,8 @@ export default function Layout() {
             <button
               onClick={() => setOpenDesempenho(!openDesempenho)}
               className={classNames(
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium text-gray-800',
-                openDesempenho ? 'bg-yellow-100' : 'hover:bg-gray-100'
+                'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+                isDesempenhoActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
               )}
             >
               <div className="flex items-center space-x-2">
@@ -133,10 +137,9 @@ export default function Layout() {
                 {!collapsed && <span>Desempenho</span>}
               </div>
               {!collapsed && (
-                <ChevronDown
-                  size={16}
-                  className={classNames(openDesempenho && 'rotate-180', 'transition')}
-                />
+                openDesempenho
+                  ? <ChevronDown size={16} className="transition" />
+                  : <ChevronRight size={16} className="transition" />
               )}
             </button>
             {openDesempenho && !collapsed && (
@@ -171,23 +174,23 @@ export default function Layout() {
           {/* Seção: Execução */}
           <div className="mb-2">
             <button
-              onClick={() => setOpenExecucao(!openExecucao)}
-              className={classNames(
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-gray-800',
-                openExecucao ? 'bg-gray-100' : 'hover:bg-gray-100'
-              )}
-            >
-              <div className="flex items-center space-x-2">
-                <Play size={20} />
-                {!collapsed && <span>Execução</span>}
-              </div>
-              {!collapsed && (
-                <ChevronDown
-                  size={16}
-                  className={classNames(openExecucao && 'rotate-180', 'transition')}
-                />
-              )}
-            </button>
+            onClick={() => setOpenExecucao(!openExecucao)}
+            className={classNames(
+              'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+              isExecucaoActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <Play size={20} />
+              {!collapsed && <span>Execução</span>}
+            </div>
+            {!collapsed && (
+              openExecucao
+                ? <ChevronDown size={16} className="transition" />
+                : <ChevronRight size={16} className="transition" />
+            )}
+          </button>
+
             {openExecucao && !collapsed && (
               <div className="mt-1 ml-8 space-y-1">
                 <NavLink
@@ -238,23 +241,23 @@ export default function Layout() {
           {/* Seção: Configurações */}
           <div className="mb-2">
             <button
-              onClick={() => setOpenConfig(c => !c)}
-              className={classNames(
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg text-gray-800',
-                openConfig ? 'bg-gray-100' : 'hover:bg-gray-100'
-              )}
-            >
-              <div className="flex items-center space-x-2">
-                <Settings size={20} />
-                {!collapsed && <span>Configurações</span>}
-              </div>
-              {!collapsed && (
-                <ChevronDown
-                  size={16}
-                  className={classNames(openConfig && 'rotate-180', 'transition')}
-                />
-              )}
-            </button>
+            onClick={() => setOpenConfig(!openConfig)}
+            className={classNames(
+              'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+              isConfigActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+            )}
+          >
+            <div className="flex items-center space-x-2">
+              <Settings size={20} />
+              {!collapsed && <span>Configurações</span>}
+            </div>
+            {!collapsed && (
+              openConfig
+                ? <ChevronDown size={16} className="transition" />
+                : <ChevronRight size={16} className="transition" />
+            )}
+          </button>
+
             {openConfig && !collapsed && (
               <div className="mt-1 ml-8 space-y-1">
                 <NavLink
@@ -298,9 +301,10 @@ export default function Layout() {
         {/* Rodapé da sidebar: perfil compacto */}
         <div className={classNames('border-t px-3 py-3 flex items-center', collapsed ? 'justify-center' : 'justify-between')}>
           <div className="flex items-center space-x-2">
-            <div className="h-8 w-8 rounded-full bg-yellow-400 text-black flex items-center justify-center font-semibold">
+            <div className="h-8 w-8 rounded-full bg-black text-white flex items-center justify-center font-semibold">
               {getInitials(displayName || undefined)}
             </div>
+
             {!collapsed && (
               <div className="leading-tight">
                 <div className="text-sm font-medium text-gray-900">{displayName || 'Usuário'}</div>

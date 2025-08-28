@@ -37,29 +37,28 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // 🔑 Busca o perfil direto da tabela `usuarios`
   const fetchPerfilById = async (uid: string): Promise<UsuarioPerfil | null> => {
-    const { data, error } = await supabase
-      .from('usuarios')
-      // Use 'criado_em:created_at' to alias the column name
-      .select('id, nome, criado_em:created_at, foto_url, role, id_setor')
-      .eq('id', uid)
-      .maybeSingle()
+    const { data, error } = await supabase
+     .from('usuarios')
+     // Use 'criado_em:created_at' to alias the column name
+     .select('id, nome, criado_em:created_at, foto_url, role, id_setor')
+     .eq('id', uid)
+     .maybeSingle()
 
-    if (error) {
-      console.warn('[Auth] erro ao buscar perfil:', error.message)
-      return null
-    }
+    if (error) {
+      console.warn('[Auth] erro ao buscar perfil:', error.message)
+      return null
+    }
+    if (!data) return null
 
-    if (!data) return null
-
-    // The returned 'data' object will now have 'criado_em' instead of 'created_at'
-    return {
-      id: data.id,
-      nome: data.nome,
-      foto_url: data.foto_url,
-      role: data.role,
-      id_setor: data.id_setor,
-      criado_em: data.criado_em, // Use the new aliased property
-    }
+    // The returned 'data' object will now have 'criado_em' instead of 'created_at'
+    return {
+      id: data.id,
+      nome: data.nome,
+      foto_url: data.foto_url,
+      role: data.role,
+      id_setor: data.id_setor,
+      criado_em: data.criado_em, // Use the new aliased property
+    }
   }
 
   const ensureUsuarioRecord = async (usr: any) => {

@@ -224,7 +224,7 @@ useEffect(() => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="p-4 text-center"><div className="text-sm text-gray-500">Ações em aberto</div><div className="text-xl font-bold">{acoesEmAberto}</div></CardContent></Card>
-        <Card><CardContent className="p-4 text-center"><div className="text-sm text-gray-500">Ações a vencer</div><div className="text-xl font-bold">3</div></CardContent></Card>
+        <Card><CardContent className="p-4 text-center"><div className="text-sm text-gray-500">Ações a vencer</div><div className="text-xl font-bold">0</div></CardContent></Card>
         <Card><CardContent className="p-4 text-center"><div className="text-sm text-gray-500">Progresso Médio</div><div className="text-xl font-bold">{progressoMedio.toFixed(0)}%</div></CardContent></Card>
         <Card><CardContent className="p-4 text-center"><div className="text-sm text-gray-500">Valor Impactado</div><div className="text-xl font-bold">R$ {acoes.reduce((s, a) => s + (a.vl_impacto || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div></CardContent></Card>
       </div>
