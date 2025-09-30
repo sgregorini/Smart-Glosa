@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 export default function ResetPassword() {
   const navigate = useNavigate()
-  const location = useLocation()
 
   const [newPassword, setNewPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -12,78 +11,31 @@ export default function ResetPassword() {
   const [sessionReady, setSessionReady] = useState(false)
   const [initialCheckComplete, setInitialCheckComplete] = useState(false)
 
-  // Lê dos dois lugares: ?query e #hash
-  const parsed = useMemo(() => {
-    const url = new URL(window.location.href)
-    const sp = url.searchParams
-    const hp = new URLSearchParams(url.hash.replace(/^#/, ''))
-    return {
-      typeQ: sp.get('type') || hp.get('type'),
-      token:
-        sp.get('code') ||
-        sp.get('token_hash') ||
-        hp.get('code') ||
-        hp.get('token_hash'),
-      emailQ: sp.get('email') || hp.get('email'),
-    }
-  }, [location.key])
-
-  // 1) Troca o token por sessão
+  // 1) Checa se já existe sessão (Supabase já validou o link)
   useEffect(() => {
-    let cancelled = false
+    let mounted = true
     ;(async () => {
       try {
-        if (parsed.typeQ === 'recovery' && parsed.token && parsed.emailQ) {
-          const { data, error } = await supabase.auth.verifyOtp({
-            type: 'recovery',
-            email: parsed.emailQ,
-            token: parsed.token,
-          })
-          if (error) {
-            setError(error.message)
-            setInitialCheckComplete(true)
-            return
-          }
-          if (data?.session && !cancelled) {
-            setSessionReady(true)
-            setError(null)
-            setInitialCheckComplete(true)
-            if (window.location.search || window.location.hash) {
-              window.history.replaceState(null, '', '/reset-password')
-            }
-          }
-        } else {
-          const { data: { session } } = await supabase.auth.getSession()
-          setSessionReady(!!session)
-          setInitialCheckComplete(true)
-          if (!session) {
-            setError('O link de recuperação é inválido ou não foi solicitado.')
-          }
-        }
-      } catch (e: any) {
-        setError(e?.message || 'Erro ao validar o link de recuperação.')
-        setInitialCheckComplete(true)
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!mounted) return
+        setSessionReady(!!session)
+      } finally {
+        if (mounted) setInitialCheckComplete(true)
       }
     })()
-    return () => { cancelled = true }
-  }, [parsed])
+    return () => { mounted = false }
+  }, [])
 
-  // 2) Listener de auth (inclui PASSWORD_RECOVERY)
+  // 2) Ouve criação da sessão (quando usuário chega pelo link do e-mail)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
         setSessionReady(true)
         setError(null)
-        setInitialCheckComplete(true)
-        if (window.location.search || window.location.hash) {
-          window.history.replaceState(null, '', '/reset-password')
-        }
-      } else if (!session && initialCheckComplete && !parsed.token) {
-        setError('O link de recuperação está inválido ou expirou. Solicite um novo.')
       }
     })
     return () => subscription.unsubscribe()
-  }, [initialCheckComplete, parsed.token])
+  }, [])
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -91,7 +43,7 @@ export default function ResetPassword() {
     setError(null)
 
     if (!sessionReady) {
-      setError('Sessão não verificada. Abra o link completo do e-mail.')
+      setError('Abra esta página pelo link do e-mail de recuperação.')
       setLoading(false)
       return
     }
@@ -117,7 +69,7 @@ export default function ResetPassword() {
         {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
 
         {!initialCheckComplete && (
-          <div className="text-blue-600 text-sm mb-3">Verificando link de recuperação...</div>
+          <div className="text-blue-600 text-sm mb-3">Verificando sessão...</div>
         )}
 
         <input
@@ -135,6 +87,12 @@ export default function ResetPassword() {
         >
           {loading ? 'Atualizando…' : 'Atualizar senha'}
         </button>
+
+        {!sessionReady && initialCheckComplete && (
+          <p className="text-xs text-gray-500 mt-3">
+            Abra esta página pelo link do e-mail de recuperação para habilitar a troca de senha.
+          </p>
+        )}
       </form>
     </div>
   )

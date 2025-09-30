@@ -2,21 +2,22 @@ import React, { useState } from 'react'
 import { Menu } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '@/lib/supabaseClient' // 👈 importa o client
+import { supabase } from '@/lib/supabaseClient'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)            // 👈 msg de sucesso
-  const [sendingRecovery, setSendingRecovery] = useState(false)  // 👈 estado do envio
+  const [msg, setMsg] = useState<string | null>(null)
+  const [sendingRecovery, setSendingRecovery] = useState(false)
 
   const { login, authenticating } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null); setMsg(null)
+    setError(null)
+    setMsg(null)
 
     const success = await login(email, password)
     if (!success) {
@@ -27,17 +28,25 @@ export default function Login() {
   }
 
   const handleSendRecovery = async () => {
-    setError(null); setMsg(null)
+    setError(null)
+    setMsg(null)
+
     if (!email) {
       setError('Informe seu e-mail para enviarmos o link de recuperação.')
       return
     }
+
     try {
       setSendingRecovery(true)
-      await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'http://localhost:5173/reset-password',
+
+      // usa o mesmo domínio da aplicação (funciona em dev e prod)
+      const redirectTo = `${window.location.origin}/reset-password`
+
+      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
       })
-      if (error) throw error
+      if (rpError) throw rpError
+
       setMsg('Enviamos um e-mail com o link para redefinir sua senha.')
     } catch (e: any) {
       setError(e?.message || 'Erro ao enviar recuperação de senha.')
@@ -122,7 +131,7 @@ export default function Login() {
               type="button"
               onClick={handleSendRecovery}
               disabled={sendingRecovery}
-              className="w-full text-sm text-gray-700 underline mt-1"
+              className="w-full text-sm text-gray-700 underline mt-1 disabled:opacity-60"
             >
               {sendingRecovery ? 'Enviando…' : 'Esqueci minha senha'}
             </button>
