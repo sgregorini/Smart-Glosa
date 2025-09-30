@@ -1,8 +1,16 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
+// src/context/AuthContext.tsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-// Interface mínima do que queremos ter disponível
-interface UsuarioPerfil {
+/**
+ * Ajuste AQUI caso seu perfil venha de outra tabela/view.
+ * Ex.: 'usuarios' com colunas { id, nome, foto_url, role, id_setor, criado_em }
+ * ou uma view 'vw_usuarios'.
+ */
+const PERFIL_TABLE = 'usuarios'
+const PERFIL_COLS = 'id, nome, foto_url, role, id_setor, criado_em'
+
+export interface UsuarioPerfil {
   id: string
   nome: string | null
   foto_url: string | null
@@ -19,224 +27,125 @@ interface AuthContextType {
   authenticating: boolean
   login: (email: string, password: string) => Promise<boolean>
   logout: () => Promise<void>
+  refreshPerfil: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+async function fetchPerfil(userId: string): Promise<UsuarioPerfil | null> {
+  // Busca o perfil do usuário autenticado.
+  // Se você usa outra tabela/view, ajuste PERFIL_TABLE/PERFIL_COLS acima.
+  const { data, error } = await supabase
+    .from(PERFIL_TABLE)
+    .select(PERFIL_COLS)
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (error) {
+    // perfil pode não existir ainda; não vamos quebrar a app
+    // console.warn('fetchPerfil error:', error)
+    return null
+  }
+
+  return (data as UsuarioPerfil) ?? null
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const [booted, setBooted] = useState(false)          // app inicializado (já perguntamos sessão)
+  const [loading, setLoading] = useState(true)         // carregando user/perfil
+  const [authenticating, setAuthenticating] = useState(false) // durante login
   const [user, setUser] = useState<any | null>(null)
   const [perfil, setPerfil] = useState<UsuarioPerfil | null>(null)
 
-  const [booted, setBooted] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [authenticating, setAuthenticating] = useState(false)
-
-  const handledInitialRef = useRef(false)
-  const currentUserIdRef = useRef<string | null>(null)
-  const loginInFlightRef = useRef(false)
-
-  // 🔑 Busca o perfil direto da tabela `usuarios`
-  const fetchPerfilById = async (uid: string): Promise<UsuarioPerfil | null> => {
-    const { data, error } = await supabase
-     .from('usuarios')
-     // Use 'criado_em:created_at' to alias the column name
-     .select('id, nome, criado_em:created_at, foto_url, role, id_setor')
-     .eq('id', uid)
-     .maybeSingle()
-
-    if (error) {
-      console.warn('[Auth] erro ao buscar perfil:', error.message)
-      return null
-    }
-    if (!data) return null
-
-    // The returned 'data' object will now have 'criado_em' instead of 'created_at'
-    return {
-      id: data.id,
-      nome: data.nome,
-      foto_url: data.foto_url,
-      role: data.role,
-      id_setor: data.id_setor,
-      criado_em: data.criado_em, // Use the new aliased property
-    }
-  }
-
-  const ensureUsuarioRecord = async (usr: any) => {
-    if (!usr) return
-
-    const { data: row, error: selErr } = await supabase
-      .from('usuarios')
-      .select('id, nome')
-      .eq('id', usr.id)
-      .maybeSingle()
-
-    if (selErr) {
-      console.warn('[Auth] ensureUsuarioRecord select error:', selErr.message)
-      return
-    }
-
-    const fallbackName =
-      usr.user_metadata?.full_name ||
-      (usr.email ? String(usr.email).split('@')[0] : null)
-
-    if (!row) {
-      const { error: insErr } = await supabase.from('usuarios').insert({
-        id: usr.id,
-        nome: fallbackName,
-      })
-      if (insErr) console.warn('[Auth] insert usuarios error:', insErr.message)
-      return
-    }
-
-    if (!row.nome || !row.nome.trim()) {
-      const { error: updErr } = await supabase
-        .from('usuarios')
-        .update({ nome: fallbackName })
-        .eq('id', usr.id)
-      if (updErr) console.warn('[Auth] update usuarios error:', updErr.message)
-    }
-  }
-
+  // Primeira carga: pega sessão atual
   useEffect(() => {
     let mounted = true
-    let unsub: { unsubscribe: () => void } | null = null
-
-    const hydrate = async () => {
+    ;(async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession()
-        const currentUser = sessionData?.session?.user ?? null
-        if (!mounted) return
+        setLoading(true)
+        const { data, error } = await supabase.auth.getSession()
+        if (error) throw error
 
-        setUser(currentUser)
-        currentUserIdRef.current = currentUser?.id ?? null
+        const currentUser = data.session?.user ?? null
+        if (mounted) setUser(currentUser)
 
         if (currentUser) {
-          await ensureUsuarioRecord(currentUser)
-          const p = await fetchPerfilById(currentUser.id)
-          if (!mounted) return
-          setPerfil(p)
+          const p = await fetchPerfil(currentUser.id)
+          if (mounted) setPerfil(p)
         } else {
-          setPerfil(null)
+          if (mounted) setPerfil(null)
         }
       } catch (e) {
-        console.warn('[Auth] hydrate exception:', e)
+        // console.warn('getSession error:', e)
       } finally {
-        if (mounted) setBooted(true)
+        if (mounted) {
+          setLoading(false)
+          setBooted(true)
+        }
       }
+    })()
 
-      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!mounted) return
-        const nextUser = session?.user ?? null
+    return () => { mounted = false }
+  }, [])
 
-        if (event === 'INITIAL_SESSION') {
-          if (handledInitialRef.current) return
-          handledInitialRef.current = true
-          setUser(nextUser)
-          if (nextUser) {
-            await ensureUsuarioRecord(nextUser)
-            const p = await fetchPerfilById(nextUser.id)
-            if (!mounted) return
-            setPerfil(p)
-          }
-          return
-        }
+  // Listener de mudanças de auth (login/logout/refresh token)
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const nextUser = session?.user ?? null
+      setUser(nextUser)
+      if (nextUser) {
+        const p = await fetchPerfil(nextUser.id)
+        setPerfil(p)
+      } else {
+        setPerfil(null)
+      }
+    })
 
-        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'MFA_CHALLENGE_VERIFIED') {
-          setUser(nextUser)
-          if (nextUser) {
-            await ensureUsuarioRecord(nextUser)
-            const p = await fetchPerfilById(nextUser.id)
-            if (!mounted) return
-            setPerfil(p)
-          }
-          return
-        }
+    return () => { sub.subscription.unsubscribe() }
+  }, [])
 
-        if (event === 'SIGNED_IN') {
-          if (loginInFlightRef.current) return
-
-          const prev = currentUserIdRef.current
-          setUser(nextUser)
-          currentUserIdRef.current = nextUser?.id ?? null
-
-          if (nextUser && prev === nextUser.id && perfil) return
-
-          if (nextUser) {
-            await ensureUsuarioRecord(nextUser)
-            const p = await fetchPerfilById(nextUser.id)
-            if (!mounted) return
-            setPerfil(p)
-          } else {
-            setPerfil(null)
-          }
-          return
-        }
-
-        if (event === 'SIGNED_OUT' || event === 'PASSWORD_RECOVERY') {
-          setUser(null)
-          currentUserIdRef.current = null
-          setPerfil(null)
-          return
-        }
-      })
-      unsub = data.subscription
-    }
-
-    hydrate()
-
-    return () => {
-      try { unsub?.unsubscribe() } catch {}
-      mounted = false
-    }
-  }, []) // eslint-disable-line
-
- const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string) => {
     setAuthenticating(true)
-    loginInFlightRef.current = true
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error || !data?.user) return false
+      if (error) return false
+      const u = data.user ?? null
+      setUser(u)
 
-      setUser(data.user)
-      currentUserIdRef.current = data.user.id
-
-      setLoading(true)
-      await ensureUsuarioRecord(data.user)
-      const p = await fetchPerfilById(data.user.id)
-      setPerfil(p)
-      setLoading(false)
-
-      if (!booted) setBooted(true)
-      return true
-    } catch (e) {
-      console.error('[Auth] exceção no login:', e)
-      return false
+      if (u) {
+        const p = await fetchPerfil(u.id)
+        setPerfil(p)
+      }
+      return !!u
     } finally {
-      loginInFlightRef.current = false
       setAuthenticating(false)
     }
   }
 
   const logout = async () => {
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.warn('[Auth] erro no signOut:', error.message)
-      }
-    } finally {
-      setUser(null)
-      setPerfil(null)
-      currentUserIdRef.current = null
-      localStorage.removeItem('smartglosa.auth')
-      sessionStorage.removeItem('smartglosa.auth')
-    }
+    await supabase.auth.signOut()
+    setUser(null)
+    setPerfil(null)
   }
 
-  return (
-    <AuthContext.Provider value={{ user, perfil, booted, loading, authenticating, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
+  const refreshPerfil = async () => {
+    if (!user?.id) return
+    const p = await fetchPerfil(user.id)
+    setPerfil(p)
+  }
+
+  const value = useMemo<AuthContextType>(() => ({
+    user,
+    perfil,
+    booted,
+    loading,
+    authenticating,
+    login,
+    logout,
+    refreshPerfil,
+  }), [user, perfil, booted, loading, authenticating])
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export const useAuth = () => {

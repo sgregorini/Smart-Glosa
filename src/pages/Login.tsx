@@ -2,18 +2,21 @@ import React, { useState } from 'react'
 import { Menu } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '@/lib/supabaseClient' // 👈 importa o client
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)            // 👈 msg de sucesso
+  const [sendingRecovery, setSendingRecovery] = useState(false)  // 👈 estado do envio
 
   const { login, authenticating } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
+    setError(null); setMsg(null)
 
     const success = await login(email, password)
     if (!success) {
@@ -21,6 +24,26 @@ export default function Login() {
       return
     }
     navigate('/', { replace: true })
+  }
+
+  const handleSendRecovery = async () => {
+    setError(null); setMsg(null)
+    if (!email) {
+      setError('Informe seu e-mail para enviarmos o link de recuperação.')
+      return
+    }
+    try {
+      setSendingRecovery(true)
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'http://localhost:5173/reset-password',
+      })
+      if (error) throw error
+      setMsg('Enviamos um e-mail com o link para redefinir sua senha.')
+    } catch (e: any) {
+      setError(e?.message || 'Erro ao enviar recuperação de senha.')
+    } finally {
+      setSendingRecovery(false)
+    }
   }
 
   return (
@@ -53,15 +76,11 @@ export default function Login() {
               Acesse sua conta
             </h2>
 
-            {error && (
-              <p className="text-red-500 text-sm text-center">{error}</p>
-            )}
+            {msg && <p className="text-green-600 text-sm text-center">{msg}</p>}
+            {error && <p className="text-red-500 text-sm text-center">{error}</p>}
 
             <div>
-              <label
-                className="block text-sm font-medium text-gray-600 mb-1"
-                htmlFor="email"
-              >
+              <label className="block text-sm font-medium text-gray-600 mb-1" htmlFor="email">
                 E-mail
               </label>
               <input
@@ -76,10 +95,7 @@ export default function Login() {
             </div>
 
             <div>
-              <label
-                className="block text-sm font-medium text-gray-600 mb-1"
-                htmlFor="password"
-              >
+              <label className="block text-sm font-medium text-gray-600 mb-1" htmlFor="password">
                 Senha
               </label>
               <input
@@ -99,6 +115,16 @@ export default function Login() {
               className="w-full h-12 bg-yellow-400 text-white text-lg font-medium rounded-lg hover:bg-yellow-500 transition disabled:opacity-70"
             >
               {authenticating ? 'Entrando...' : 'Entrar'}
+            </button>
+
+            {/* Esqueci minha senha */}
+            <button
+              type="button"
+              onClick={handleSendRecovery}
+              disabled={sendingRecovery}
+              className="w-full text-sm text-gray-700 underline mt-1"
+            >
+              {sendingRecovery ? 'Enviando…' : 'Esqueci minha senha'}
             </button>
 
             <p className="text-xs text-gray-500 text-center">

@@ -1,6 +1,6 @@
 // src/components/Layout.tsx
 import React, { useEffect, useState } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   BarChart2,
   Play,
@@ -12,7 +12,6 @@ import {
   Menu,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import { useNavigate } from 'react-router-dom'
 
 function classNames(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
@@ -25,7 +24,7 @@ function getInitials(name?: string | null) {
 }
 
 export default function Layout() {
-  const { perfil, user, loading, logout } = useAuth()
+  const { perfil, user, loading, booted, logout } = useAuth()
 
   // Estado da UI
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -40,13 +39,14 @@ export default function Layout() {
     const raw = localStorage.getItem('sg_open_execucao')
     return raw ? raw === '1' : false
   })
-
   const [openConfig, setOpenConfig] = useState<boolean>(() => {
-  const raw = localStorage.getItem('sg_open_config')
-  return raw ? raw === '1' : false
-})
+    const raw = localStorage.getItem('sg_open_config')
+    return raw ? raw === '1' : false
+  })
 
   const location = useLocation()
+  const navigate = useNavigate()
+
   const isDesempenhoActive = location.pathname === '/' || location.pathname.startsWith('/analytics')
   const isExecucaoActive = location.pathname.startsWith('/execucao')
   const isConfigActive = location.pathname.startsWith('/configuracoes')
@@ -64,18 +64,16 @@ export default function Layout() {
     localStorage.setItem('sg_open_config', openConfig ? '1' : '0')
   }, [openConfig])
 
-
   const displayName =
     perfil?.nome ??
     user?.user_metadata?.full_name ??
     (user?.email ? String(user.email).split('@')[0] : null) ??
     null
 
-    const navigate = useNavigate()
-      const handleLogout = async () => {
-        await logout()
-        navigate('/login', { replace: true })
-      }
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="min-h-screen flex bg-white">
@@ -174,22 +172,22 @@ export default function Layout() {
           {/* Seção: Execução */}
           <div className="mb-2">
             <button
-            onClick={() => setOpenExecucao(!openExecucao)}
-            className={classNames(
-              'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
-              isExecucaoActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Play size={20} />
-              {!collapsed && <span>Execução</span>}
-            </div>
-            {!collapsed && (
-              openExecucao
-                ? <ChevronDown size={16} className="transition" />
-                : <ChevronRight size={16} className="transition" />
-            )}
-          </button>
+              onClick={() => setOpenExecucao(!openExecucao)}
+              className={classNames(
+                'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+                isExecucaoActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+              )}
+            >
+              <div className="flex items-center space-x-2">
+                <Play size={20} />
+                {!collapsed && <span>Execução</span>}
+              </div>
+              {!collapsed && (
+                openExecucao
+                  ? <ChevronDown size={16} className="transition" />
+                  : <ChevronRight size={16} className="transition" />
+              )}
+            </button>
 
             {openExecucao && !collapsed && (
               <div className="mt-1 ml-8 space-y-1">
@@ -241,22 +239,22 @@ export default function Layout() {
           {/* Seção: Configurações */}
           <div className="mb-2">
             <button
-            onClick={() => setOpenConfig(!openConfig)}
-            className={classNames(
-              'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
-              isConfigActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Settings size={20} />
-              {!collapsed && <span>Configurações</span>}
-            </div>
-            {!collapsed && (
-              openConfig
-                ? <ChevronDown size={16} className="transition" />
-                : <ChevronRight size={16} className="transition" />
-            )}
-          </button>
+              onClick={() => setOpenConfig(!openConfig)}
+              className={classNames(
+                'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+                isConfigActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+              )}
+            >
+              <div className="flex items-center space-x-2">
+                <Settings size={20} />
+                {!collapsed && <span>Configurações</span>}
+              </div>
+              {!collapsed && (
+                openConfig
+                  ? <ChevronDown size={16} className="transition" />
+                  : <ChevronRight size={16} className="transition" />
+              )}
+            </button>
 
             {openConfig && !collapsed && (
               <div className="mt-1 ml-8 space-y-1">
@@ -321,7 +319,7 @@ export default function Layout() {
       <div className="flex-1 flex flex-col">
         <header className="flex items-center justify-between bg-yellow-400 text-black px-4 md:px-6 py-3 md:py-4">
           <div className="flex items-center gap-2">
-            {/* Toggle da sidebar em telas menores e para expandir quando colapsada */}
+            {/* Toggle da sidebar */}
             <button
               type="button"
               onClick={() => setCollapsed(c => !c)}
@@ -332,7 +330,7 @@ export default function Layout() {
             </button>
 
             <span className="font-semibold uppercase tracking-wide">
-              {loading ? 'Carregando…' : `Bem-vindo, ${displayName || 'Usuário'}`}
+              {!booted || loading ? 'Carregando…' : `Bem-vindo, ${displayName || 'Usuário'}`}
             </span>
           </div>
 
@@ -354,7 +352,7 @@ export default function Layout() {
   )
 }
 
-/** Ícone simples para "recolher" (chevron esquerdo) sem depender de outro pacote */
+/** Ícone simples para "recolher" (chevron esquerdo) */
 function ChevronLeftIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg

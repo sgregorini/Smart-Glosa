@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import type { Responsavel, AcaoDetalhe, EtapaDetalhe } from '@/types'
 import ProgressoEtapas from '@/components/ProgressoEtapas'
@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   FilePlus2,
   MessageCircle,
@@ -38,6 +39,112 @@ export interface DetalhesAcaoModalProps {
   loadingEtapas: boolean
 }
 
+/** Tipo genérico p/ editor multi-seleção */
+type GenericOption = { id: string; label: string; sublabel?: string }
+
+function getIcon(from: string, to: string) {
+  if (from === 'Pendente' && to === 'Em Andamento') return <Play className="text-yellow-500 w-4 h-4" />
+  if (to === 'Concluído') return <Check className="text-green-600 w-4 h-4" />
+  if (from === 'Concluído' && to === 'Em Andamento') return <RotateCcw className="text-blue-500 w-4 h-4" />
+  return null
+}
+
+/** Editor Multi-Select com busca, usado para Operadoras e Glosas */
+function MultiSelectEditor({
+  title,
+  options,
+  selected,
+  setSelected,
+  placeholder = 'Pesquisar…',
+  renderOption,
+}: {
+  title: string
+  options: GenericOption[]
+  selected: string[]
+  setSelected: (ids: string[]) => void
+  placeholder?: string
+  renderOption?: (o: GenericOption) => React.ReactNode
+}) {
+  const [query, setQuery] = useState('')
+
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim()
+    if (!q) return options
+    return options.filter(
+      (o) =>
+        o.label.toLowerCase().includes(q) ||
+        (o.sublabel && o.sublabel.toLowerCase().includes(q))
+    )
+  }, [options, query])
+
+  function toggle(id: string) {
+    if (selectedSet.has(id)) {
+      setSelected(selected.filter((s) => s !== id))
+    } else {
+      setSelected([...selected, id])
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="font-medium">{title}</h4>
+        {selected.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+            Limpar
+          </Button>
+        )}
+      </div>
+
+      <Input
+        placeholder={placeholder}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+
+      <div className="max-h-56 overflow-y-auto rounded-md border">
+        {filtered.length === 0 ? (
+          <div className="p-3 text-sm text-muted-foreground">Nenhum item encontrado.</div>
+        ) : (
+          <ul className="divide-y">
+            {filtered.map((o) => {
+              const checked = selectedSet.has(o.id)
+              return (
+                <li key={o.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggle(o.id)}
+                    className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground flex items-start gap-2"
+                  >
+                    <span
+                      className={`mt-0.5 inline-block h-4 w-4 rounded-sm border ${
+                        checked ? 'bg-primary' : 'bg-background'
+                      }`}
+                    />
+                    <div className="flex flex-col">
+                      {renderOption ? (
+                        renderOption(o)
+                      ) : (
+                        <>
+                          <span className="text-sm">{o.label}</span>
+                          {o.sublabel && (
+                            <span className="text-xs opacity-70">{o.sublabel}</span>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function DetalhesAcaoModal({
   open,
   onClose,
@@ -46,13 +153,6 @@ export default function DetalhesAcaoModal({
   loadingEtapas,
 }: DetalhesAcaoModalProps) {
   if (!acao) return null
-
-  const getIcon = (from: string, to: string) => {
-    if (from === 'Pendente' && to === 'Em Andamento') return <Play className="text-yellow-500 w-4 h-4" />
-    if (to === 'Concluído') return <Check className="text-green-600 w-4 h-4" />
-    if (from === 'Concluído' && to === 'Em Andamento') return <RotateCcw className="text-blue-500 w-4 h-4" />
-    return null
-  }
 
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([])
   const [abrirModalEtapa, setAbrirModalEtapa] = useState(false)
@@ -64,34 +164,20 @@ export default function DetalhesAcaoModal({
 
   const [historico, setHistorico] = useState<any[]>([])
 
-  // ATENÇÃO: confere se esses UUIDs batem com sua tabela status_etapa_tipos
-  const STATUS: Record<'andamento' | 'concluido' | 'pendente', string> = {
-    andamento: '1d0abec2-697e-4c0b-aee5-5259b663858f',
-    concluido: '804c998e-cbc0-487c-aeac-5adcf4b10e46',
-    pendente: 'f5e906c02-ce9f-456f-9c44-5fa081539f90', // parece ter um "02" a mais; valida!
-  }
+  // === Status lookup dinâmico (sem UUID hardcoded) ===
+  const [statusMap, setStatusMap] = useState<Record<'andamento' | 'concluido' | 'pendente', string>>({
+    andamento: '',
+    concluido: '',
+    pendente: '',
+  })
 
-  function formatarIntervalo(interval: string) {
-    if (!interval || typeof interval !== 'string') return ''
-    const clean = interval.replace('-', '')
-    const matchDias = clean.match(/(\d+)\s+day(?:s)?\s+(\d{2}):(\d{2}):/)
-    if (matchDias) {
-      const dias = parseInt(matchDias[1], 10)
-      const horas = parseInt(matchDias[2], 10)
-      const minutos = parseInt(matchDias[3], 10)
-      return `${dias}d ${horas}h ${minutos}min`
-    }
-    const matchTempo = clean.match(/(\d{2}):(\d{2}):/)
-    if (matchTempo) {
-      const horas = parseInt(matchTempo[1], 10)
-      const minutos = parseInt(matchTempo[2], 10)
-      let texto = ''
-      if (horas > 0) texto += `${horas}h `
-      if (minutos > 0) texto += `${minutos}min`
-      return texto.trim() || 'menos de 1min'
-    }
-    return 'menos de 1min'
-  }
+  // === Relações N:N da Ação ===
+  const [operadorasOptions, setOperadorasOptions] = useState<GenericOption[]>([])
+  const [glosasOptions, setGlosasOptions] = useState<GenericOption[]>([])
+  const [operadoraIds, setOperadoraIds] = useState<string[]>([])
+  const [glosaIds, setGlosaIds] = useState<string[]>([])
+  const [editandoVinculos, setEditandoVinculos] = useState(false)
+  const [salvandoVinculos, setSalvandoVinculos] = useState(false)
 
   useEffect(() => {
     supabase.from('responsaveis').select('*').then(({ data }) => {
@@ -105,6 +191,65 @@ export default function DetalhesAcaoModal({
       fetchHistorico(acao.id).then(setHistorico)
     }
   }, [etapas, acao?.id])
+
+  // Carrega status IDs por nome (Pendente, Em Andamento, Concluído)
+  useEffect(() => {
+    async function loadStatusIds() {
+      const { data, error } = await supabase
+        .from('status_etapa_tipos')
+        .select('id, nome')
+
+      if (error || !data) return
+      const map: any = {}
+      for (const row of data) {
+        const nome = (row.nome || '').toLowerCase()
+        if (nome.includes('andamento')) map.andamento = row.id
+        else if (nome.includes('conclu')) map.concluido = row.id
+        else if (nome.includes('pendente')) map.pendente = row.id
+      }
+      setStatusMap((prev) => ({ ...prev, ...map }))
+    }
+    if (open) loadStatusIds()
+  }, [open])
+
+  // Carrega opções de Operadoras e Glosas + vínculos da ação
+  useEffect(() => {
+    async function loadOptionsESelections() {
+      const [ops, gls] = await Promise.all([
+        supabase.from('operadoras').select('id, nome'),
+        supabase.from('glosas').select('id, codigo, descricao, ds_gru_fat'),
+      ])
+
+      if (ops.data) {
+        setOperadorasOptions(
+          ops.data.map((o) => ({ id: o.id, label: o.nome }))
+        )
+      }
+      if (gls.data) {
+        setGlosasOptions(
+          gls.data.map((g) => ({
+            id: g.id,
+            label: `${g.codigo} — ${g.descricao}`,
+            sublabel: g.ds_gru_fat || undefined,
+          }))
+        )
+      }
+
+      if (acao?.id) {
+        const [selOps, selGls] = await Promise.all([
+          supabase.from('acoes_operadoras').select('operadora_id').eq('acao_id', acao.id),
+          supabase.from('acoes_glosas').select('glosa_id').eq('acao_id', acao.id),
+        ])
+
+        if (selOps.data) setOperadoraIds(selOps.data.map((r: any) => r.operadora_id))
+        if (selGls.data) setGlosaIds(selGls.data.map((r: any) => r.glosa_id))
+      } else {
+        setOperadoraIds([])
+        setGlosaIds([])
+      }
+    }
+    if (open) loadOptionsESelections()
+  }, [open, acao?.id])
 
   async function fetchEtapas(idAcao: string) {
     const { data, error } = await supabase
@@ -136,7 +281,6 @@ export default function DetalhesAcaoModal({
   }
 
   function verificarStatusVisual(et: EtapaDetalhe): string {
-    // Usa nome do status vindo da VIEW
     const nome = et.nm_status_etapa || 'Pendente'
     if (
       nome !== 'Concluído' &&
@@ -148,8 +292,29 @@ export default function DetalhesAcaoModal({
     return nome
   }
 
+  function formatarIntervalo(interval: string) {
+    if (!interval || typeof interval !== 'string') return ''
+    const clean = interval.replace('-', '')
+    const matchDias = clean.match(/(\d+)\s+day(?:s)?\s+(\d{2}):(\d{2}):/)
+    if (matchDias) {
+      const dias = parseInt(matchDias[1], 10)
+      const horas = parseInt(matchDias[2], 10)
+      const minutos = parseInt(matchDias[3], 10)
+      return `${dias}d ${horas}h ${minutos}min`
+    }
+    const matchTempo = clean.match(/(\d{2}):(\d{2}):/)
+    if (matchTempo) {
+      const horas = parseInt(matchTempo[1], 10)
+      const minutos = parseInt(matchTempo[2], 10)
+      let texto = ''
+      if (horas > 0) texto += `${horas}h `
+      if (minutos > 0) texto += `${minutos}min`
+      return texto.trim() || 'menos de 1min'
+    }
+    return 'menos de 1min'
+  }
+
   async function fetchHistorico(acaoId: string) {
-    // busca as etapas da ação
     const { data: etapasData, error: etapasError } = await supabase
       .from('etapas')
       .select('id')
@@ -163,7 +328,6 @@ export default function DetalhesAcaoModal({
     const etapaIds = etapasData.map(e => e.id)
     if (etapaIds.length === 0) return []
 
-    // sua view vw_etapas_historico não aparece na lista, mas você disse que existe/funciona
     const { data: historicoData, error: historicoError } = await supabase
       .from('vw_etapas_historico')
       .select('*')
@@ -182,8 +346,13 @@ export default function DetalhesAcaoModal({
     etapaId: string,
     novoStatus: 'andamento' | 'concluido' | 'pendente' | 'reabrir'
   ) {
-    const statusFinal = novoStatus === 'reabrir' ? 'andamento' : novoStatus
-    const novoStatusId = STATUS[statusFinal]
+    const final = novoStatus === 'reabrir' ? 'andamento' : novoStatus
+    const statusId = statusMap[final]
+    if (!statusId) {
+      alert('Não foi possível identificar o status no banco (status_etapa_tipos).')
+      return
+    }
+
     const hoje = new Date().toISOString().slice(0, 10)
 
     // Busca status atual
@@ -199,9 +368,9 @@ export default function DetalhesAcaoModal({
       return
     }
 
-    const campos: Record<string, any> = { id_status_etapa: novoStatusId }
-    if (statusFinal === 'andamento') campos.dt_inicio_real = hoje
-    if (statusFinal === 'concluido') campos.dt_fim_real = hoje
+    const campos: Record<string, any> = { id_status_etapa: statusId }
+    if (final === 'andamento') campos.dt_inicio_real = hoje
+    if (final === 'concluido') campos.dt_fim_real = hoje
 
     const { error: updateError } = await supabase
       .from('etapas')
@@ -221,8 +390,8 @@ export default function DetalhesAcaoModal({
       .insert({
         etapa_id: etapaId,
         status_anterior: etapa.id_status_etapa,
-        status_novo: novoStatusId,
-        criado_por: usuarioId || null, // na sua tabela é text; se quiser uuid, altere o tipo
+        status_novo: statusId,
+        criado_por: usuarioId || null,
       })
 
     if (logError) {
@@ -237,24 +406,91 @@ export default function DetalhesAcaoModal({
     }
   }
 
+  // Utils N:N
+  async function syncManyToMany(params: {
+    acaoId: string
+    table: 'acoes_glosas' | 'acoes_operadoras'
+    idColumn: 'glosa_id' | 'operadora_id'
+    selectedIds: string[]
+  }) {
+    const { acaoId, table, idColumn, selectedIds } = params
+    const current = await supabase.from(table).select(idColumn).eq('acao_id', acaoId)
+    if (current.error) throw current.error
+    const currentIds = new Set<string>((current.data || []).map((r: any) => r[idColumn]))
+    const selSet = new Set(selectedIds)
+    const toInsert = [...selSet].filter((id) => !currentIds.has(id))
+    const toDelete = [...currentIds].filter((id) => !selSet.has(id))
+
+    if (toInsert.length > 0) {
+      const rows = toInsert.map((id) => ({ acao_id: acaoId, [idColumn]: id }))
+      const ins = await supabase.from(table).insert(rows)
+      if (ins.error) throw ins.error
+    }
+    if (toDelete.length > 0) {
+      const del = await supabase.from(table)
+        .delete()
+        .eq('acao_id', acaoId)
+        .in(idColumn, toDelete)
+      if (del.error) throw del.error
+    }
+  }
+
+  async function salvarVinculos() {
+    if (!acao?.id) return
+    try {
+      setSalvandoVinculos(true)
+      await Promise.all([
+        syncManyToMany({
+          acaoId: acao.id,
+          table: 'acoes_operadoras',
+          idColumn: 'operadora_id',
+          selectedIds: operadoraIds,
+        }),
+        syncManyToMany({
+          acaoId: acao.id,
+          table: 'acoes_glosas',
+          idColumn: 'glosa_id',
+          selectedIds: glosaIds,
+        }),
+      ])
+      setEditandoVinculos(false)
+    } catch (e) {
+      console.error(e)
+      alert('Erro ao salvar vínculos.')
+    } finally {
+      setSalvandoVinculos(false)
+    }
+  }
+
+  const operadorasSelecionadas = useMemo(() => {
+    const set = new Set(operadoraIds)
+    return operadorasOptions.filter((o) => set.has(o.id))
+  }, [operadoraIds, operadorasOptions])
+
+  const glosasSelecionadas = useMemo(() => {
+    const set = new Set(glosaIds)
+    return glosasOptions.filter((g) => set.has(g.id))
+  }, [glosaIds, glosasOptions])
+
   return (
     <Dialog open={open} onOpenChange={isOpen => { if (!isOpen) onClose() }}>
       <DialogContent className="max-w-6xl p-0 overflow-hidden" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader className="px-6 pt-6">
           <DialogTitle className="text-xl font-bold">Detalhes da Ação</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            Aqui você vê todas as informações e pode adicionar etapas.
+            Aqui você vê todas as informações, gerencia vínculos (Operadoras/Glosas) e pode adicionar etapas.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-[320px_1fr] h-[80vh]">
+        <div className="grid grid-cols-[340px_1fr] h-[80vh]">
           {/* Painel esquerdo */}
-          <div className="bg-gray-50 p-6 border-r space-y-4 w-full h-full">
+          <div className="bg-gray-50 p-6 border-r space-y-5 w-full h-full overflow-y-auto">
+            {/* Título + fechar */}
             <div className="flex justify-between items-start">
-              <div className="max-w-[260px]">
+              <div className="max-w-[280px]">
                 <h2 className="text-base font-bold break-words">{acao.acao_descricao}</h2>
                 <p className="text-xs text-muted-foreground">
-                  {acao.pda_id_original || '—'} • {acao.id_operadora || '–'}
+                  {acao.pda_id_original || '—'}
                 </p>
               </div>
               <Button variant="ghost" size="icon" onClick={onClose}>
@@ -262,6 +498,7 @@ export default function DetalhesAcaoModal({
               </Button>
             </div>
 
+            {/* Status */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground mb-1">Status</label>
               <div>
@@ -271,9 +508,52 @@ export default function DetalhesAcaoModal({
               </div>
             </div>
 
+            {/* Responsável */}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground mb-1">Responsável</label>
               <p className="text-sm font-medium text-gray-800">{acao.nm_responsavel || 'Não definido'}</p>
+            </div>
+
+            {/* Operadoras vinculadas */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">Operadoras vinculadas</label>
+                <Button variant="ghost" size="sm" onClick={() => setEditandoVinculos(true)}>
+                  <Pencil className="h-4 w-4 mr-1" /> Editar
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {operadorasSelecionadas.length === 0 ? (
+                  <span className="text-xs opacity-60">Nenhuma operadora vinculada.</span>
+                ) : (
+                  operadorasSelecionadas.map((o) => (
+                    <span key={o.id} className="text-xs rounded-full border px-2 py-0.5 bg-white">
+                      {o.label}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Motivos de Glosa vinculados */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-muted-foreground">Motivos de Glosa vinculados</label>
+                <Button variant="ghost" size="sm" onClick={() => setEditandoVinculos(true)}>
+                  <Pencil className="h-4 w-4 mr-1" /> Editar
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {glosasSelecionadas.length === 0 ? (
+                  <span className="text-xs opacity-60">Nenhum motivo de glosa vinculado.</span>
+                ) : (
+                  glosasSelecionadas.map((g) => (
+                    <span key={g.id} className="text-xs rounded-full border px-2 py-0.5 bg-white">
+                      {g.label}{g.sublabel ? ` (${g.sublabel})` : ''}
+                    </span>
+                  ))
+                )}
+              </div>
             </div>
           </div>
 
@@ -434,6 +714,7 @@ export default function DetalhesAcaoModal({
         </div>
       </DialogContent>
 
+      {/* Modal Adicionar Etapa */}
       <ModalAdicionarEtapa
         open={abrirModalEtapa}
         onClose={() => setAbrirModalEtapa(false)}
@@ -445,6 +726,7 @@ export default function DetalhesAcaoModal({
         }}
       />
 
+      {/* Confirmação de mudança de status */}
       {modalStatus && (
         <ModalConfirmarStatus
           open={true}
@@ -452,6 +734,48 @@ export default function DetalhesAcaoModal({
           onClose={() => setModalStatus(null)}
           onConfirm={() => atualizarStatus(modalStatus.etapaId, modalStatus.tipo)}
         />
+      )}
+
+      {/* Mini-editor de vínculos Operadoras/Glosas */}
+      {editandoVinculos && (
+        <Dialog open={editandoVinculos} onOpenChange={(isOpen) => !isOpen && setEditandoVinculos(false)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Editar vínculos da Ação</DialogTitle>
+              <DialogDescription>Selecione as Operadoras e Motivos de Glosa relacionados a esta ação.</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <MultiSelectEditor
+                title="Operadoras"
+                options={operadorasOptions}
+                selected={operadoraIds}
+                setSelected={setOperadoraIds}
+                placeholder="Buscar operadora…"
+              />
+              <MultiSelectEditor
+                title="Motivos de Glosa"
+                options={glosasOptions}
+                selected={glosaIds}
+                setSelected={setGlosaIds}
+                placeholder="Buscar por código/descrição…"
+                renderOption={(o) => (
+                  <>
+                    <span className="text-sm">{o.label}</span>
+                    {o.sublabel && <span className="text-xs opacity-70">{o.sublabel}</span>}
+                  </>
+                )}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setEditandoVinculos(false)}>Cancelar</Button>
+              <Button onClick={salvarVinculos} disabled={salvandoVinculos}>
+                {salvandoVinculos ? 'Salvando…' : 'Salvar vínculos'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </Dialog>
   )

@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext'
 import ConfiguracoesMestre from './pages/Configuracoes/ConfiguracoesMestre'
 import ConfiguracoesUsuarios from './pages/Configuracoes/ConfiguracoesUsuarios'
 import MeuPerfil from './pages/Configuracoes/MeuPerfil'
+import ResetPassword from './pages/ResetPassword'
 
 function BootScreen() {
   return (
@@ -18,14 +19,14 @@ function BootScreen() {
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, booted } = useAuth()
-  if (!booted) return <BootScreen />   // ✅ só bloqueia no boot inicial
+  if (!booted) return <BootScreen />
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, booted } = useAuth()
-  if (!booted) return <BootScreen />   // ✅ evita piscar entre login <-> app
+  if (!booted) return <BootScreen />
   if (user) return <Navigate to="/" replace />
   return <>{children}</>
 }
@@ -34,7 +35,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* rota pública */}
+        {/* rotas públicas */}
         <Route
           path="/login"
           element={
@@ -43,8 +44,9 @@ export default function App() {
             </PublicRoute>
           }
         />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* rotas privadas (todas dentro do Layout) */}
+        {/* rotas privadas */}
         <Route
           element={
             <PrivateRoute>
@@ -55,15 +57,13 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="execucao/hub" element={<HubAcoes />} />
 
-          {/* Configurações */}
           <Route path="configuracoes">
             <Route path="mestre" element={<ConfiguracoesMestre />} />
             <Route path="usuarios" element={<ConfiguracoesUsuarios />} />
-            <Route path="meu-perfil" element={<MeuPerfil />} />   {/* 👈 novo */}
+            <Route path="meu-perfil" element={<MeuPerfil />} />
           </Route>
         </Route>
       </Routes>
     </BrowserRouter>
   )
 }
-
