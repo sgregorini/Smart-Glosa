@@ -1,127 +1,132 @@
-import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
+import { useNavigate, useLocation } from 'react-router-dom'
 
 export default function ResetPassword() {
-  const navigate = useNavigate();
-  const location = useLocation();
+  const navigate = useNavigate()
+  const location = useLocation()
 
-  const [newPassword, setNewPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
+  const [newPassword, setNewPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [sessionReady, setSessionReady] = useState(false)
+  const [initialCheckComplete, setInitialCheckComplete] = useState(false)
 
+  // Lê dos dois lugares: ?query e #hash
   const parsed = useMemo(() => {
-    const url = new URL(window.location.href);
-    const sp = url.searchParams;
+    const url = new URL(window.location.href)
+    const sp = url.searchParams
+    const hp = new URLSearchParams(url.hash.replace(/^#/, ''))
     return {
-      typeQ: sp.get('type'),
-      code: sp.get('code'), 
-      emailQ: sp.get('email'),
-    };
-  }, [location.key]);
-
-
-  // 1. Efeito para trocar o token pelo código
-  useEffect(() => {
-    if (parsed.typeQ === 'recovery' && parsed.code && parsed.emailQ) {
-      (async () => {
-        // Tenta trocar o código (TokenHash) por uma sessão ativa
-        const { error: verifyError } = await supabase.auth.verifyOtp({
-          type: 'recovery',
-          email: parsed.emailQ,
-          token: parsed.code, 
-        });
-
-        if (verifyError) {
-          setError(verifyError.message);
-          setInitialCheckComplete(true);
-        }
-        // Se for bem-sucedido, o listener abaixo captura a nova sessão.
-      })();
-    } else {
-        // Se a página for carregada sem parâmetros, checa se já tem sessão
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSessionReady(!!session);
-            setInitialCheckComplete(true);
-            if (!session) {
-                setError("O link de recuperação está inválido ou você não solicitou uma redefinição.");
-            }
-        });
+      typeQ: sp.get('type') || hp.get('type'),
+      token:
+        sp.get('code') ||
+        sp.get('token_hash') ||
+        hp.get('code') ||
+        hp.get('token_hash'),
+      emailQ: sp.get('email') || hp.get('email'),
     }
-  }, [parsed]);
+  }, [location.key])
 
-  // 2. Efeito para ouvir mudanças no estado de autenticação (captura a nova sessão)
+  // 1) Troca o token por sessão
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        if (parsed.typeQ === 'recovery' && parsed.token && parsed.emailQ) {
+          const { data, error } = await supabase.auth.verifyOtp({
+            type: 'recovery',
+            email: parsed.emailQ,
+            token: parsed.token,
+          })
+          if (error) {
+            setError(error.message)
+            setInitialCheckComplete(true)
+            return
+          }
+          if (data?.session && !cancelled) {
+            setSessionReady(true)
+            setError(null)
+            setInitialCheckComplete(true)
+            if (window.location.search || window.location.hash) {
+              window.history.replaceState(null, '', '/reset-password')
+            }
+          }
+        } else {
+          const { data: { session } } = await supabase.auth.getSession()
+          setSessionReady(!!session)
+          setInitialCheckComplete(true)
+          if (!session) {
+            setError('O link de recuperação é inválido ou não foi solicitado.')
+          }
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Erro ao validar o link de recuperação.')
+        setInitialCheckComplete(true)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [parsed])
+
+  // 2) Listener de auth (inclui PASSWORD_RECOVERY)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      // O evento 'SIGNED_IN' ocorre logo após o verifyOtp ser bem-sucedido.
-      if (session && event === 'SIGNED_IN') {
-        setSessionReady(true);
-        setError(null);
-        setInitialCheckComplete(true);
-
-        // Limpa a URL se houver parâmetros (tanto query quanto hash)
+      if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY')) {
+        setSessionReady(true)
+        setError(null)
+        setInitialCheckComplete(true)
         if (window.location.search || window.location.hash) {
-            window.history.replaceState(null, '', '/reset-password');
+          window.history.replaceState(null, '', '/reset-password')
         }
-      } else if (!session && initialCheckComplete && !parsed.code) {
-        // Se a verificação inicial já ocorreu e não há sessão, mostra o erro.
-        // Isso evita que o erro pisque antes da verificação.
-        setError("O link de recuperação está inválido ou expirado. Por favor, solicite uma nova redefinição.");
+      } else if (!session && initialCheckComplete && !parsed.token) {
+        setError('O link de recuperação está inválido ou expirou. Solicite um novo.')
       }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [initialCheckComplete, parsed.code]);
-
+    })
+    return () => subscription.unsubscribe()
+  }, [initialCheckComplete, parsed.token])
 
   const handleUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
     if (!sessionReady) {
-        setError("Sessão não verificada. Por favor, use o link completo do e-mail.");
-        setLoading(false);
-        return;
+      setError('Sessão não verificada. Abra o link completo do e-mail.')
+      setLoading(false)
+      return
     }
 
     try {
-      if (newPassword.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.');
-      
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      
-      if (error) throw error;
-      alert('Senha alterada com sucesso!');
-      navigate('/login');
+      if (newPassword.length < 6) throw new Error('A senha precisa ter pelo menos 6 caracteres.')
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) throw error
+      alert('Senha alterada com sucesso!')
+      navigate('/login')
     } catch (e: any) {
-      setError(e?.message || 'Erro ao atualizar a senha.');
+      setError(e?.message || 'Erro ao atualizar a senha.')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center">
       <form onSubmit={handleUpdate} className="bg-white shadow p-6 rounded-lg w-96">
         <h1 className="text-lg font-semibold mb-4">Definir nova senha</h1>
-        
+
         {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
-        
+
         {!initialCheckComplete && (
-            <div className="text-blue-600 text-sm mb-3">
-                Verificando link de recuperação...
-            </div>
+          <div className="text-blue-600 text-sm mb-3">Verificando link de recuperação...</div>
         )}
-        
+
         <input
           type="password"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           placeholder="Nova senha"
           className="w-full border px-3 py-2 rounded mb-3"
-          disabled={!sessionReady || loading || !initialCheckComplete} 
+          disabled={!sessionReady || loading || !initialCheckComplete}
         />
         <button
           type="submit"
@@ -132,5 +137,5 @@ export default function ResetPassword() {
         </button>
       </form>
     </div>
-  );
+  )
 }
