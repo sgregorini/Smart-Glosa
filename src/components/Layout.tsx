@@ -330,7 +330,7 @@ export default function Layout() {
             </button>
 
             <span className="font-semibold uppercase tracking-wide">
-              {!booted || loading ? 'Carregando…' : `Bem-vindo, ${displayName || 'Usuário'}`}
+              {!booted ? 'Carregando…' : `Bem-vindo, ${displayName || 'Usuário'}`}
             </span>
           </div>
 
