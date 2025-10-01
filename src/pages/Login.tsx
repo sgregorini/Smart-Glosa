@@ -39,17 +39,14 @@ export default function Login() {
     try {
       setSendingRecovery(true)
 
-      // usa o mesmo domínio da aplicação (funciona em dev e prod)
-      const redirectTo = `${window.location.origin}/reset-password`
-
-      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
-      })
+      // Ação: REMOVER redirectTo para que o Supabase use o fluxo de tokens no hash
+      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, {})
+      
       if (rpError) throw rpError
 
       setMsg('Enviamos um e-mail com o link para redefinir sua senha.')
     } catch (e: any) {
-      setError(e?.message || 'Erro ao enviar recuperação de senha.')
+      setError(e?.message || 'Erro ao enviar o link de recuperação.')
     } finally {
       setSendingRecovery(false)
     }
