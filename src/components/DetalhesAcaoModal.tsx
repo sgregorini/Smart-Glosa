@@ -489,9 +489,6 @@ export default function DetalhesAcaoModal({
             <div className="flex justify-between items-start">
               <div className="max-w-[280px]">
                 <h2 className="text-base font-bold break-words">{acao.acao_descricao}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {acao.pda_id_original || '—'}
-                </p>
               </div>
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X size={20} />

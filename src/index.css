@@ -1,6 +1,36 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* src/index.css */
+@import "tailwindcss";
+
+/* ===== Mapear tokens para nomes de cor Tailwind v4 =====
+   Isso habilita classes como bg-background, text-foreground, border-border, ring-ring, etc.
+*/
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  /* charts (opcional) */
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+}
 
 /* =========================
    Fontes customizadas
@@ -80,21 +110,35 @@
 }
 
 /* =========================
-   Resets & base
+   Base/Reset extra
    ========================= */
 @layer base {
+  /* Como mapeamos em @theme, @apply funciona sem alertas */
   * {
     @apply border-border;
-    border-color: hsl(var(--border));
+    border-color: var(--color-border);
   }
   body {
-    @apply bg-background text-foreground font-robotoCondensed;
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    @apply bg-background text-foreground;
+    font-family: 'Roboto Condensed', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  /* Suporte a radius token (opcional) */
+  :root {
+    --app-radius: var(--radius);
+  }
+
+  /* Focus visível mais elegante (opcional) */
+  :where(button, [role="button"], a, input, select, textarea):focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
 
-/* Opcional: classe utilitária para títulos com Akko */
+/* =========================
+   Utilities
+   ========================= */
 @layer utilities {
   .font-akko {
     font-family: 'Akko Pro Medium Condensed', system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
