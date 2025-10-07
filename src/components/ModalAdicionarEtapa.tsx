@@ -7,7 +7,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
-  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectSeparator,
 } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/DatePicker'
@@ -18,6 +18,7 @@ export interface ModalAdicionarEtapaProps {
   idAcao: string
   responsaveis: { id: string; nome: string }[]
   onEtapaAdicionada: () => void
+  onAbrirModalNovoResponsavel?: () => void // ✅ Propriedade adicionada
 }
 
 export default function ModalAdicionarEtapa({
@@ -26,6 +27,7 @@ export default function ModalAdicionarEtapa({
   idAcao,
   responsaveis = [],
   onEtapaAdicionada,
+  onAbrirModalNovoResponsavel, // ✅ Propriedade recebida
 }: ModalAdicionarEtapaProps) {
   const NONE = '__NONE__'
   const [descricao, setDescricao] = useState('')
@@ -131,6 +133,18 @@ export default function ModalAdicionarEtapa({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NONE}>Nenhum</SelectItem>
+                {onAbrirModalNovoResponsavel && (
+                  <>
+                    <SelectSeparator />
+                    <div
+                      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground text-blue-600"
+                      onClick={onAbrirModalNovoResponsavel}
+                    >
+                      + Adicionar Novo Responsável
+                    </div>
+                    <SelectSeparator />
+                  </>
+                )}
                 {(responsaveis ?? []).map(r => (
                   <SelectItem key={r.id} value={r.id}>
                     {r.nome}

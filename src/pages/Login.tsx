@@ -11,7 +11,8 @@ export default function Login() {
   const [msg, setMsg] = useState<string | null>(null)
   const [sendingRecovery, setSendingRecovery] = useState(false)
 
-  const { login, authenticating } = useAuth()
+  // 👇 pega loadingAuth do contexto e renomeia localmente para "authenticating"
+  const { login, loadingAuth: authenticating } = useAuth()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -19,7 +20,7 @@ export default function Login() {
     setError(null)
     setMsg(null)
 
-    const success = await login(email, password)
+    const success = await login(email.trim(), password)
     if (!success) {
       setError('E-mail ou senha inválidos.')
       return
@@ -38,14 +39,9 @@ export default function Login() {
 
     try {
       setSendingRecovery(true)
-
-      // Melhoria: Usar o fluxo moderno (PKCE) que é mais seguro.
-      // O Supabase enviará um link com ?code=... para esta URL.
-      const redirectTo = `${window.location.origin}/reset-password`;
-      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-      
+      const redirectTo = `${window.location.origin}/reset-password`
+      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
       if (rpError) throw rpError
-
       setMsg('Enviamos um e-mail com o link para redefinir sua senha.')
     } catch (e: any) {
       setError(e?.message || 'Erro ao enviar o link de recuperação.')
@@ -76,13 +72,8 @@ export default function Login() {
             </h1>
           </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="bg-white shadow-lg rounded-2xl px-8 py-10 space-y-6"
-          >
-            <h2 className="text-xl font-semibold text-center text-gray-700">
-              Acesse sua conta
-            </h2>
+          <form onSubmit={handleSubmit} className="bg-white shadow-lg rounded-2xl px-8 py-10 space-y-6">
+            <h2 className="text-xl font-semibold text-center text-gray-700">Acesse sua conta</h2>
 
             {msg && <p className="text-green-600 text-sm text-center">{msg}</p>}
             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
@@ -125,7 +116,6 @@ export default function Login() {
               {authenticating ? 'Entrando...' : 'Entrar'}
             </button>
 
-            {/* Esqueci minha senha */}
             <button
               type="button"
               onClick={handleSendRecovery}

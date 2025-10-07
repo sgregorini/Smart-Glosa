@@ -18,10 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
   SelectContent,
+  SelectSeparator,
   SelectItem,
 } from '@/components/ui/select'
 import { Check, ChevronsUpDown, X } from 'lucide-react'
-import type { Acao } from '@/types'
+import type { Acao, Responsavel } from '@/types'
+import ModalAdicionarResponsavel from './ModalAdicionarResponsavel'
 
 // Tipos de opções
 type StatusOption = { id: string; nome: string }
@@ -215,6 +217,7 @@ export default function ModalCriarEditarAcao({
   const [glosaOptions, setGlosaOptions] = useState<GlosaOption[]>([])
   const [setorOptions, setSetorOptions] = useState<SetorOption[]>([])
 
+  const [modalNovoResponsavel, setModalNovoResponsavel] = useState(false)
   const isEdit = !!acao
   const contentRef = useRef<HTMLDivElement | null>(null)
 
@@ -462,6 +465,13 @@ export default function ModalCriarEditarAcao({
                 <SelectValue placeholder="Selecione" />
               </SelectTrigger>
               <SelectContent>
+                <div
+                  className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground text-blue-600"
+                  onClick={() => setModalNovoResponsavel(true)}
+                >
+                  + Adicionar Novo Responsável
+                </div>
+                <SelectSeparator />
                 {responsavelOptions.map((r) => (
                   <SelectItem key={r.id} value={r.id}>
                     {r.nome}
@@ -538,6 +548,18 @@ export default function ModalCriarEditarAcao({
             {isEdit ? 'Atualizar' : 'Criar'}
           </Button>
         </div>
+
+        <ModalAdicionarResponsavel
+          open={modalNovoResponsavel}
+          onClose={() => setModalNovoResponsavel(false)}
+          onResponsavelCriado={(novoResponsavel: Responsavel) => {
+            // Atualiza a lista de opções e já seleciona o novo
+            setResponsavelOptions((prev) => [...prev, novoResponsavel].sort((a, b) => a.nome.localeCompare(b.nome)))
+            setResponsavelId(novoResponsavel.id)
+            setModalNovoResponsavel(false)
+          }}
+        />
+
       </DialogContent>
     </Dialog>
   )

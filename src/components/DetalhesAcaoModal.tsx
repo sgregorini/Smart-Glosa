@@ -28,6 +28,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import ModalAdicionarEtapa from './ModalAdicionarEtapa'
+import ModalAdicionarResponsavel from './ModalAdicionarResponsavel'
 import ComentariosEtapa from './ComentariosEtapa'
 import AnexosEtapa from './AnexosEtapa'
 import { useAuth } from '@/context/AuthContext'
@@ -160,6 +161,7 @@ export default function DetalhesAcaoModal({
   const [abrirModalEtapa, setAbrirModalEtapa] = useState(false)
   const [etapasInternas, setEtapasInternas] = useState<EtapaDetalhe[]>(etapas)
   const [modalStatus, setModalStatus] = useState<{
+    // ... (código existente)
     etapaId: string
     tipo: 'andamento' | 'concluido' | 'reabrir'
   } | null>(null)
@@ -180,6 +182,7 @@ export default function DetalhesAcaoModal({
   const [glosaIds, setGlosaIds] = useState<string[]>([])
   const [editandoVinculos, setEditandoVinculos] = useState(false)
   const [salvandoVinculos, setSalvandoVinculos] = useState(false)
+  const [modalNovoResponsavel, setModalNovoResponsavel] = useState(false)
 
   // === Estado elevado para anexos pendentes de upload ===
   const [arquivosParaUpload, setArquivosParaUpload] = useState<Record<string, File | null>>({})
@@ -729,8 +732,13 @@ export default function DetalhesAcaoModal({
         idAcao={acao.id}
         responsaveis={responsaveis}
         onEtapaAdicionada={async () => {
+          // Adiciona a opção de criar responsável também no modal de etapas
+          setAbrirModalEtapa(false)
           const novas = await fetchEtapas(acao.id)
           setEtapasInternas(novas)
+        }}
+        onAbrirModalNovoResponsavel={() => {
+          setModalNovoResponsavel(true)
         }}
       />
 
@@ -743,6 +751,17 @@ export default function DetalhesAcaoModal({
           onConfirm={() => atualizarStatus(modalStatus.etapaId, modalStatus.tipo)}
         />
       )}
+
+      {/* Modal para adicionar responsável (reutilizado) */}
+      <ModalAdicionarResponsavel
+        open={modalNovoResponsavel}
+        onClose={() => setModalNovoResponsavel(false)}
+        onResponsavelCriado={(novoResponsavel) => {
+          setResponsaveis((prev) => [...prev, novoResponsavel].sort((a, b) => a.nome.localeCompare(b.nome)))
+          setModalNovoResponsavel(false)
+          // Idealmente, o modal de etapa deveria reabrir e selecionar o novo.
+        }}
+      />
 
       {/* Mini-editor de vínculos Operadoras/Glosas */}
       {editandoVinculos && (

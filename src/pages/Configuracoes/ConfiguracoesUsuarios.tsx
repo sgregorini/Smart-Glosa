@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Pencil, Trash2, Plus } from 'lucide-react'
+import { Pencil, Trash2, Plus, Send } from 'lucide-react'
+import { toast } from 'sonner'
 
 // Tipos
 type Usuario = {
@@ -15,6 +16,13 @@ type Usuario = {
   confirmado: boolean
   nome: string | null
   role: string | null
+  id_setor: string | null
+}
+
+type Responsavel = {
+  id: string
+  nome: string
+  email: string
   id_setor: string | null
 }
 
@@ -40,6 +48,7 @@ function gerarSenhaTemporaria() {
 export default function ConfiguracoesUsuarios() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [setores, setSetores] = useState<Setor[]>([])
+  const [responsaveisSemAcesso, setResponsaveisSemAcesso] = useState<Responsavel[]>([])
   const [loading, setLoading] = useState(true)
 
   // Modal Editar
@@ -62,14 +71,28 @@ export default function ConfiguracoesUsuarios() {
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data: u, error: eu }, { data: s, error: es }] = await Promise.all([
+    const [{ data: u, error: eu }, { data: s, error: es }, { data: r, error: er }] = await Promise.all([
       supabase.from('vw_usuarios_detalhes').select('*').order('created_at', { ascending: false }),
       supabase.from('setores').select('id, nome').order('nome'),
+      supabase.from('responsaveis').select('*'),
     ])
+
     if (eu) console.error('[vw_usuarios_detalhes] erro:', eu)
     if (es) console.error('[setores] erro:', es)
-    setUsuarios((u as Usuario[]) ?? [])
-    setSetores((s as Setor[]) ?? [])
+    if (er) console.error('[responsaveis] erro:', er)
+
+    const usuariosData = (u as Usuario[]) ?? []
+    const setoresData = (s as Setor[]) ?? []
+    const responsaveisData = (r as Responsavel[]) ?? []
+
+    setUsuarios(usuariosData)
+    setSetores(setoresData)
+
+    // Filtra responsáveis que ainda não são usuários (comparando por email)
+    const emailsDeUsuarios = new Set(usuariosData.map(usr => usr.email.toLowerCase()))
+    const semAcesso = responsaveisData.filter(resp => !emailsDeUsuarios.has(resp.email.toLowerCase()))
+    setResponsaveisSemAcesso(semAcesso)
+
     setLoading(false)
   }
 
@@ -174,6 +197,30 @@ const createUser = async () => {
     fetchAll();
 };
 
+  const convidarResponsavel = async (responsavel: Responsavel) => {
+    const { nome, email, id_setor } = responsavel
+    const role = 'user' // Papel padrão para novos convidados
+
+    const { data, error } = await supabase.functions.invoke('create-user', {
+      method: 'POST',
+      body: { email, nome, role, id_setor },
+    })
+
+    if (error) {
+      console.error('[invoke-invite] erro:', error)
+      toast.error(`Erro ao convidar ${nome}`, {
+        description: error.message,
+      })
+      return
+    }
+
+    toast.success(`Convite enviado para ${nome}!`, {
+      description: `O usuário receberá um e-mail para definir sua senha.`,
+    })
+
+    // Atualiza as listas para mover o responsável para a lista de usuários
+    fetchAll()
+  }
 
   return (
     <div className="space-y-6">
@@ -221,6 +268,38 @@ const createUser = async () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Card Responsáveis sem Acesso */}
+      {responsaveisSemAcesso.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Responsáveis sem Acesso</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Estes são responsáveis cadastrados no sistema que ainda não possuem um login. Envie um convite para que possam acessar a plataforma.
+            </p>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="border rounded-lg overflow-hidden">
+              <div className="grid grid-cols-12 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600">
+                <div className="col-span-4">Nome</div>
+                <div className="col-span-4">Email</div>
+                <div className="col-span-4 text-right">Ação</div>
+              </div>
+              {responsaveisSemAcesso.map(r => (
+                <div key={r.id} className="grid grid-cols-12 px-4 py-2 border-t items-center text-sm">
+                  <div className="col-span-4 truncate font-medium">{r.nome}</div>
+                  <div className="col-span-4 truncate">{r.email}</div>
+                  <div className="col-span-4 flex justify-end">
+                    <Button variant="outline" size="sm" onClick={() => convidarResponsavel(r)}>
+                      <Send size={14} className="mr-2" /> Convidar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal Editar */}
       <Dialog open={openEdit} onOpenChange={setOpenEdit}>
