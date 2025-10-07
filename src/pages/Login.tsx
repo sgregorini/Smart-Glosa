@@ -39,8 +39,10 @@ export default function Login() {
     try {
       setSendingRecovery(true)
 
-      // Ação: REMOVER redirectTo para que o Supabase use o fluxo de tokens no hash
-      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, {})
+      // Melhoria: Usar o fluxo moderno (PKCE) que é mais seguro.
+      // O Supabase enviará um link com ?code=... para esta URL.
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error: rpError } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
       
       if (rpError) throw rpError
 

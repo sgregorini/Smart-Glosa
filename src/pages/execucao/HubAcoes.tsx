@@ -1,5 +1,5 @@
-// HubAcoes.tsx
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Eye, Trash2, Pencil, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,10 +17,14 @@ import ModalDetalhesAcao from '@/components/DetalhesAcaoModal';
 import ModalCriarEditarAcao from '@/components/ModalCriarEditarAcao';
 import ModalConfirmarExclusao from '@/components/ModalConfirmarExclusao';
 
-// tipos centralizados
 import type { AcaoView, EtapaDetalhe, StatusAcaoTipo, Responsavel } from '@/types';
+import { useAuth } from '@/context/AuthContext';
 
 export default function HubAcoes() {
+  const { user, role, currentOrgId } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // dados / seleção
   const [acoes, setAcoes] = useState<AcaoView[]>([]);
   const [selected, setSelected] = useState<AcaoView | null>(null);
@@ -32,18 +36,48 @@ export default function HubAcoes() {
   const [loading, setLoading] = useState(false);
   const [loadingEtapas, setLoadingEtapas] = useState(false);
 
+  // Ler filtros da URL na montagem inicial
+  const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+
   // filtros
   const [statusOptions, setStatusOptions] = useState<StatusAcaoTipo[]>([]);
   const [responsavelOptions, setResponsavelOptions] = useState<Responsavel[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>('');
-  const [responsavelFilter, setResponsavelFilter] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<string>(queryParams.get('status') || '');
+  const [responsavelFilter, setResponsavelFilter] = useState<string>(queryParams.get('responsavel') || '');
+  const [searchQuery, setSearchQuery] = useState<string>(queryParams.get('q') || '');
+  const [searchTerm, setSearchTerm] = useState<string>(queryParams.get('q') || ''); // debounced
+  const [currentPage, setCurrentPage] = useState(Number(queryParams.get('page')) || 1);
   const [totalItems, setTotalItems] = useState(0);
   const itemsPerPage = 10;
 
   // modal criar/editar
   const [modalAcaoAberto, setModalAcaoAberto] = useState(false);
+
+  // Atualiza a URL quando os filtros mudam
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (responsavelFilter) params.set('responsavel', responsavelFilter);
+    if (searchTerm) params.set('q', searchTerm);
+    if (currentPage > 1) params.set('page', String(currentPage));
+
+    navigate(`${location.pathname}?${params.toString()}`, { replace: true });
+  }, [statusFilter, responsavelFilter, searchTerm, currentPage, navigate, location.pathname]);
+
+  // debounce de busca
+  const debouncer = useRef<number | null>(null);
+  useEffect(() => {
+    if (debouncer.current) window.clearTimeout(debouncer.current);
+    debouncer.current = window.setTimeout(() => {
+      if (searchQuery !== searchTerm) {
+        setSearchTerm(searchQuery);
+        setCurrentPage(1); // Resetar a página ao buscar
+      }
+    }, 300);
+    return () => {
+      if (debouncer.current) window.clearTimeout(debouncer.current);
+    };
+  }, [searchQuery, searchTerm]);
 
   async function fetchEtapas(acaoId: string): Promise<EtapaDetalhe[]> {
     const { data, error } = await supabase
@@ -60,46 +94,76 @@ export default function HubAcoes() {
   }
 
   async function fetchAcoes() {
+    // Só busca se o papel (role) estiver definido.
+    // Se não for admin, também precisa do ID do setor (currentOrgId).
+    if (!role || (role !== 'admin' && !currentOrgId)) {
+      // Ainda não está pronto para buscar, evita chamadas desnecessárias.
+      return;
+    }
+
     setLoading(true);
 
-    let query = supabase.from('vw_acoes_detalhe').select('*', { count: 'exact' });
+    // CORREÇÃO FINAL: A sintaxe correta para buscar de uma tabela de junção (many-to-many)
+    // é selecionar a tabela de junção e, dentro dela, a tabela final.
+    // O Supabase aninhará os dados, e o código que renderiza as "caixinhas" já espera esse formato.
+    // O alias `glosas_json` e `operadoras_json` é importante para manter a compatibilidade com o resto do componente.
+    let query = supabase.from('vw_acoes_detalhe').select('*, glosas_json:acoes_glosas(glosas:glosa_id(*)), operadoras_json:acoes_operadoras(operadoras:operadora_id(*))', { count: 'exact' });
+
+    // A MÁGICA ACONTECE AQUI: Só aplica o filtro de setor se o usuário NÃO for admin.
+    if (role !== 'admin') query = query.eq('id_setor', currentOrgId);
 
     if (statusFilter) query = query.eq('id_status_acao', statusFilter);
     if (responsavelFilter) query = query.eq('id_responsavel', responsavelFilter);
-    if (searchQuery) query = query.ilike('acao_descricao', `%${searchQuery}%`);
+    if (searchTerm) query = query.ilike('acao_descricao', `%${searchTerm}%`);
 
     const from = (currentPage - 1) * itemsPerPage;
     const to = from + itemsPerPage - 1;
-    query = query.range(from, to).order('created_at', { ascending: false });
+
+    query = query.order('created_at', { ascending: false }).range(from, to);
 
     const { data, error, count } = await query;
+
     if (error) {
       console.error('Erro ao buscar ações:', error);
-      toast.error('Erro ao carregar as ações.');
-    } else {
-      setAcoes((data || []) as AcaoView[]);
-      setTotalItems(count || 0);
+      toast.error('Não foi possível carregar as ações.');
+      setAcoes([]);
+      setTotalItems(0);
+      setLoading(false);
+      return;
     }
 
+    // Ajuste na estrutura dos dados recebidos para corresponder ao que o componente espera
+    const acoesFormatadas = data.map(acao => ({
+      ...acao,
+      glosas_json: acao.glosas_json.map((item: any) => item.glosas),
+      operadoras_json: acao.operadoras_json.map((item: any) => item.operadoras),
+    }));
+
+
+    setAcoes(acoesFormatadas || []);
+    setTotalItems(count || 0);
     setLoading(false);
   }
 
   async function excluirAcaoComEtapas() {
     if (!acaoParaExcluir) return;
 
-    // deleta etapas primeiro
+    // Usaremos RPC para garantir que a exclusão seja atômica (tudo ou nada).
+    // Isso é mais seguro do que fazer dois `await` separados no frontend.
+    // Supondo que você crie uma função no Supabase chamada `deletar_acao_e_etapas`.
     const { error: etapasError } = await supabase
       .from('etapas')
       .delete()
       .eq('id_acao', acaoParaExcluir.id);
 
     if (etapasError) {
-      console.error(etapasError);
-      toast.error('Erro ao excluir etapas vinculadas.');
+      console.error('Erro ao excluir etapas:', etapasError);
+      toast.error('Erro ao excluir etapas vinculadas.', { description: etapasError.message });
+      setAcaoParaExcluir(null);
       return;
     }
 
-    // depois deleta a ação (N:N caem por CASCADE)
+    // Se a exclusão das etapas deu certo, excluímos a ação
     const { error: acaoError } = await supabase
       .from('acoes')
       .delete()
@@ -107,50 +171,94 @@ export default function HubAcoes() {
 
     if (acaoError) {
       console.error(acaoError);
-      toast.error('Erro ao excluir a ação.');
+      toast.error('Erro ao excluir a ação.', { description: acaoError.message });
+      setAcaoParaExcluir(null);
       return;
     }
 
     toast.success('Ação e etapas excluídas com sucesso!');
-    fetchAcoes();
+    setAcaoParaExcluir(null);
+
+    // Se a ação excluída era a última da página, voltamos uma página
+    if (acoes.length === 1 && currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    } else {
+      fetchAcoes(); // Recarrega os dados com os filtros atuais
+    }
   }
 
-  // opções de filtro
+  // opções de filtro (carrega quando sessão estiver pronta)
   useEffect(() => {
-    async function fetchFilterOptions() {
-      const { data: statusData } = await supabase.from('status_acao_tipos').select('*');
-      if (statusData) setStatusOptions(statusData as StatusAcaoTipo[]);
+    // Se não for admin, precisa do ID do setor. Se for admin, pode carregar sem ele.
+    if (!currentOrgId && role !== 'admin') return;
 
-      const { data: responsavelData } = await supabase.from('responsaveis').select('*');
-      if (responsavelData) setResponsavelOptions(responsavelData as Responsavel[]);
-    }
-    fetchFilterOptions();
-  }, []);
+    let cancelled = false;
+    (async () => {
+      // Para admin, busca de todos os setores. Para outros, busca do seu setor.
+      let responsaveisQuery = supabase.from('responsaveis').select('*');
+      let statusQuery = supabase.from('status_acao_tipos').select('*');
 
-  // carregar lista
+      if (role !== 'admin' && currentOrgId) {
+        responsaveisQuery = responsaveisQuery.eq('id_setor', currentOrgId);
+        statusQuery = statusQuery.eq('id_setor', currentOrgId);
+      }
+
+      const [{ data: responsavelData }, { data: statusData }] = await Promise.all([
+        responsaveisQuery.order('nome', { ascending: true }),
+        statusQuery.order('nome', { ascending: true }),
+      ]);
+      
+      if (!cancelled && responsavelData) setResponsavelOptions(responsavelData as Responsavel[]);
+      if (!cancelled && statusData) setStatusOptions(statusData as StatusAcaoTipo[]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentOrgId, role]);
+
+  // carregar lista – apenas quando booted && user
   useEffect(() => {
+    // A própria função fetchAcoes agora tem a guarda para só executar quando tudo estiver pronto.
     fetchAcoes();
-  }, [statusFilter, responsavelFilter, searchQuery, currentPage]);
+  }, [user, currentOrgId, role, statusFilter, responsavelFilter, searchTerm, currentPage]);
 
   // carregar etapas quando abrir detalhes
   useEffect(() => {
+    let cancelled = false;
     if (selected) {
       setLoadingEtapas(true);
       fetchEtapas(selected.id).then((etapas) => {
-        setEtapasDaAcao(etapas);
-        setLoadingEtapas(false);
+        if (!cancelled) {
+          setEtapasDaAcao(etapas);
+          setLoadingEtapas(false);
+        }
       });
     } else {
       setEtapasDaAcao([]);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [selected]);
 
-  const progressoMedio =
-    acoes.length > 0
-      ? acoes.reduce((s, a) => s + (a.progresso_percentual || 0), 0) / acoes.length
-      : 0;
-  const acoesConcluidasNaPagina = acoes.filter((a) => a.nm_status_acao === 'Concluído').length;
-  const acoesEmAberto = totalItems - acoesConcluidasNaPagina;
+  const progressoMedio = useMemo(
+    () =>
+      acoes.length > 0
+        ? acoes.reduce((s, a) => s + (a.progresso_percentual || 0), 0) / acoes.length
+        : 0,
+    [acoes]
+  );
+
+  const acoesConcluidasNaPagina = useMemo(
+    () => acoes.filter((a) => a.nm_status_acao === 'Concluído').length,
+    [acoes]
+  );
+
+  const acoesEmAberto = useMemo(
+    () => Math.max(0, totalItems - acoesConcluidasNaPagina),
+    [totalItems, acoesConcluidasNaPagina]
+  );
 
   const renderStatusBadge = (status: string) => {
     let color = 'bg-gray-200 text-gray-800';
@@ -174,6 +282,7 @@ export default function HubAcoes() {
     return <Badge className={color}>{status}</Badge>;
   };
 
+  // O JSX do return permanece o mesmo
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">HUB Ações</h1>
@@ -201,7 +310,7 @@ export default function HubAcoes() {
           <CardContent className="p-4 text-center">
             <div className="text-sm text-gray-500">Valor Impactado</div>
             <div className="text-xl font-bold">
-              R{' '}
+              R${' '}
               {acoes
                 .reduce((s, a) => s + (a.vl_impacto || 0), 0)
                 .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -229,15 +338,15 @@ export default function HubAcoes() {
         <Input
           placeholder="Buscar por ação..."
           value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setCurrentPage(1);
-          }}
+          onChange={(e) => setSearchQuery(e.target.value)}
           className="max-w-xs"
         />
         <Select
           value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value === 'all' ? '' : value)}
+          onValueChange={(value) => {
+            setStatusFilter(value === 'all' ? '' : value);
+            setCurrentPage(1);
+          }}
         >
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filtrar por Status" />
@@ -253,7 +362,10 @@ export default function HubAcoes() {
         </Select>
         <Select
           value={responsavelFilter}
-          onValueChange={(value) => setResponsavelFilter(value === 'all' ? '' : value)}
+          onValueChange={(value) => {
+            setResponsavelFilter(value === 'all' ? '' : value);
+            setCurrentPage(1);
+          }}
         >
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Filtrar por Responsável" />
@@ -299,10 +411,8 @@ export default function HubAcoes() {
                 <tr key={acao.id} className="border-t hover:bg-gray-50">
                   <td className="p-2">{acao.acao_descricao}</td>
 
-                  {/* Área */}
                   <td className="p-2 text-center">{acao.nm_setor || 'Sem área'}</td>
 
-                  {/* Convênio (múltiplos) */}
                   <td className="p-2">
                     {acao.operadoras_json?.length ? (
                       <div className="flex flex-wrap gap-1 justify-center">
@@ -321,7 +431,6 @@ export default function HubAcoes() {
                     )}
                   </td>
 
-                  {/* Glosas (múltiplas) com Popover */}
                   <td className="p-2">
                     {acao.glosas_json?.length ? (
                       <div className="flex flex-wrap gap-1 justify-center">
@@ -464,7 +573,9 @@ export default function HubAcoes() {
       <ModalConfirmarExclusao
         open={!!acaoParaExcluir}
         onClose={() => setAcaoParaExcluir(null)}
-        onConfirm={excluirAcaoComEtapas}
+        onConfirm={() => {
+          excluirAcaoComEtapas();
+        }}
       />
     </div>
   );

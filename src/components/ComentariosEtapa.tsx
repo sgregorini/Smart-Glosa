@@ -12,7 +12,7 @@ interface Comentario {
   usuario_nome?: string
 }
 
-export default function ComentariosEtapa({ etapaId }: { etapaId: string }) {
+export default function ComentariosEtapa({ etapaId, usuarioId }: { etapaId: string, usuarioId: string }) {
   const [mensagem, setMensagem] = useState('')
   const [comentarios, setComentarios] = useState<Comentario[]>([])
   const [loading, setLoading] = useState(false)
@@ -21,7 +21,7 @@ export default function ComentariosEtapa({ etapaId }: { etapaId: string }) {
   async function fetchComentarios() {
     const { data, error } = await supabase
       .from('comentarios_etapas')
-      .select('*, usuarios(nome)')
+      .select('*, vw_usuarios_detalhes(nome)')
       .eq('etapa_id', etapaId)
       .order('criado_em', { ascending: true })
 
@@ -32,15 +32,14 @@ export default function ComentariosEtapa({ etapaId }: { etapaId: string }) {
         id: c.id,
         mensagem: c.mensagem,
         criado_em: c.criado_em,
-        criado_por: c.criado_por,
-        usuario_nome: c.usuarios?.nome || 'Usuário'
+        criado_por: c.criado_por, // mantido para referência
+        usuario_nome: c.vw_usuarios_detalhes?.nome || 'Usuário'
       }))
       setComentarios(formatados)
     }
   }
 
   async function enviarComentario() {
-    const usuarioId = localStorage.getItem('usuario_id')
     if (!mensagem.trim() || !usuarioId) return
 
     setLoading(true)

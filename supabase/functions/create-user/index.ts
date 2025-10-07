@@ -57,7 +57,14 @@ serve(async (req) => {
       email,
       password: password || undefined,
       email_confirm: true,
-      user_metadata: { nome, role, id_setor },
+      // ✅ CORREÇÃO: Usar 'full_name' para o nome, que é o padrão do Supabase.
+      // Adicionamos 'nome' também para consistência com outras partes do seu app.
+      user_metadata: {
+        full_name: nome, // Padrão que o trigger do BD provavelmente espera
+        nome: nome,      // Garante que o nome esteja disponível em ambos os campos
+        role,
+        id_setor
+      },
     });
 
     if (authErr) {

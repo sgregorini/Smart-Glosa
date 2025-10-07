@@ -1,5 +1,6 @@
 // components/AnexosEtapa.tsx
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabaseClient'
 import { Button } from '@/components/ui/button'
 import {
@@ -19,10 +20,20 @@ interface Anexo {
   usuario_nome?: string
 }
 
-export default function AnexosEtapa({ etapaId }: { etapaId: string }) {
+// Defina o tamanho máximo do arquivo em Megabytes (MB)
+const MAX_FILE_SIZE_MB = 50;
+
+interface AnexosEtapaProps {
+  etapaId: string;
+  usuarioId: string;
+  arquivo: File | null;
+  setArquivo: (arquivo: File | null) => void;
+}
+
+export default function AnexosEtapa({ etapaId, usuarioId, arquivo, setArquivo }: AnexosEtapaProps) {
   const [anexos, setAnexos] = useState<Anexo[]>([])
   const [uploading, setUploading] = useState(false)
-  const [arquivo, setArquivo] = useState<File | null>(null)
+  const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
   const [anexoParaExcluir, setAnexoParaExcluir] = useState<Anexo | null>(null)
   const [excluindo, setExcluindo] = useState(false)
@@ -30,23 +41,37 @@ export default function AnexosEtapa({ etapaId }: { etapaId: string }) {
   async function fetchAnexos() {
     const { data, error } = await supabase
       .from('anexos_etapas')
-      .select('*, usuarios(nome)')
+      .select('*, vw_usuarios_detalhes(nome)')
       .eq('etapa_id', etapaId)
       .order('criado_em', { ascending: false })
 
     if (error) console.error('Erro ao carregar anexos:', error)
     else {
-      const formatados = data.map((a: any) => ({
-        ...a,
-        usuario_nome: a.usuarios?.nome || 'Usuário'
+      const formatados = data.map((a: any) => ({ // Adicionado 'any' para simplicidade
+        ...a, // Mantém todos os outros campos do anexo
+        usuario_nome: a.vw_usuarios_detalhes?.nome || 'Usuário'
       }))
       setAnexos(formatados)
     }
   }
 
   async function handleUpload() {
-    if (!arquivo) return
-    const usuarioId = localStorage.getItem('usuario_id')
+    if (!arquivo || fileSizeError) {
+      if (fileSizeError) {
+        toast.error('Arquivo inválido', { description: fileSizeError });
+      }
+      return;
+    }
+
+    // Verificação de tamanho do arquivo no cliente
+    const maxSizeInBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
+    if (arquivo.size > maxSizeInBytes) {
+      toast.error('Arquivo muito grande', {
+        description: `O tamanho máximo permitido é de ${MAX_FILE_SIZE_MB}MB.`
+      });
+      return
+    }
+    if (!usuarioId) return; // Garante que o usuário está logado
     const ext = arquivo.name.split('.').pop()
     const nomeArmazenado = `${etapaId}/${Date.now()}.${ext}`
 
@@ -58,6 +83,9 @@ export default function AnexosEtapa({ etapaId }: { etapaId: string }) {
 
     if (storageError) {
       console.error('Erro ao enviar arquivo:', storageError)
+      toast.error('Erro ao enviar arquivo', {
+        description: storageError.message,
+      });
       setUploading(false)
       return
     }
@@ -71,9 +99,13 @@ export default function AnexosEtapa({ etapaId }: { etapaId: string }) {
 
     if (insertError) {
       console.error('Erro ao salvar metadados:', insertError)
+      toast.error('Erro ao salvar informações do arquivo', {
+        description: insertError.message,
+      });
     }
 
     setArquivo(null)
+    setFileSizeError(null)
     await fetchAnexos()
     setUploading(false)
   }
@@ -106,26 +138,46 @@ export default function AnexosEtapa({ etapaId }: { etapaId: string }) {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <div className="relative group">
-            <input
+          <input
             id="upload-file"
             type="file"
-            onChange={(e) => setArquivo(e.target.files?.[0] || null)}
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null;
+              setFileSizeError(null);
+              if (file) {
+                const maxSizeInBytes = MAX_FILE_SIZE_MB * 1024 * 1024;
+                if (file.size > maxSizeInBytes) {
+                  setFileSizeError(`Arquivo excede o limite de ${MAX_FILE_SIZE_MB}MB`);
+                  setArquivo(null);
+                  // Limpa o valor do input para permitir selecionar o mesmo arquivo (corrigido) novamente
+                  e.target.value = '';
+                } else {
+                  setArquivo(file);
+                }
+              } else {
+                setArquivo(null);
+              }
+            }}
+            accept=".csv, .pdf, .doc, .docx, .xls, .xlsx, .jpg, .jpeg, .png, .webp"
             className="absolute inset-0 opacity-0 cursor-pointer z-10"
-            />
-            <Button
+          />
+          <Button
             type="button"
             variant="outline"
             className="transition-all group-hover:ring-2 group-hover:ring-brand group-hover:scale-105"
-            >
+          >
             Selecionar Arquivo
-            </Button>
+          </Button>
         </div>
 
-        <span className="text-sm text-gray-600">
+        <div className="flex flex-col">
+          <span className="text-sm text-gray-600">
             {arquivo ? arquivo.name : 'Nenhum arquivo selecionado'}
-        </span>
+          </span>
+          {fileSizeError && <span className="text-xs text-red-500">{fileSizeError}</span>}
+        </div>
 
-        <Button onClick={handleUpload} disabled={uploading || !arquivo}>
+        <Button onClick={handleUpload} disabled={uploading || !arquivo || !!fileSizeError}>
             {uploading ? 'Enviando…' : 'Anexar'}
         </Button>
         <Dialog open={!!anexoParaExcluir} onOpenChange={(open) => !open && setAnexoParaExcluir(null)}>

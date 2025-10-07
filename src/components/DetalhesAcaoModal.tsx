@@ -30,6 +30,7 @@ import {
 import ModalAdicionarEtapa from './ModalAdicionarEtapa'
 import ComentariosEtapa from './ComentariosEtapa'
 import AnexosEtapa from './AnexosEtapa'
+import { useAuth } from '@/context/AuthContext'
 
 export interface DetalhesAcaoModalProps {
   open: boolean
@@ -153,6 +154,7 @@ export default function DetalhesAcaoModal({
   loadingEtapas,
 }: DetalhesAcaoModalProps) {
   if (!acao) return null
+  const { user } = useAuth()
 
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([])
   const [abrirModalEtapa, setAbrirModalEtapa] = useState(false)
@@ -179,6 +181,9 @@ export default function DetalhesAcaoModal({
   const [editandoVinculos, setEditandoVinculos] = useState(false)
   const [salvandoVinculos, setSalvandoVinculos] = useState(false)
 
+  // === Estado elevado para anexos pendentes de upload ===
+  const [arquivosParaUpload, setArquivosParaUpload] = useState<Record<string, File | null>>({})
+
   useEffect(() => {
     supabase.from('responsaveis').select('*').then(({ data }) => {
       if (data) setResponsaveis(data)
@@ -188,6 +193,7 @@ export default function DetalhesAcaoModal({
   useEffect(() => {
     setEtapasInternas(etapas)
     if (acao?.id) {
+      setArquivosParaUpload({}); // Limpa arquivos pendentes ao trocar de ação
       fetchHistorico(acao.id).then(setHistorico)
     }
   }, [etapas, acao?.id])
@@ -655,7 +661,12 @@ export default function DetalhesAcaoModal({
                 {etapasInternas.map((et) => (
                   <div key={et.id} className="mb-6">
                     <h4 className="text-sm font-semibold text-gray-700 mb-1">{et.etapa_descricao}</h4>
-                    <AnexosEtapa etapaId={et.id} />
+                    <AnexosEtapa
+                      etapaId={et.id}
+                      usuarioId={user?.id || ''}
+                      arquivo={arquivosParaUpload[et.id] || null}
+                      setArquivo={(arquivo) => setArquivosParaUpload(prev => ({ ...prev, [et.id]: arquivo }))}
+                    />
                   </div>
                 ))}
               </TabsContent>
@@ -664,7 +675,7 @@ export default function DetalhesAcaoModal({
                 {etapasInternas.map(et => (
                   <div key={et.id} className="mb-6">
                     <h4 className="text-sm font-semibold text-gray-700 mb-1">{et.etapa_descricao}</h4>
-                    <ComentariosEtapa etapaId={et.id} />
+                    <ComentariosEtapa etapaId={et.id} usuarioId={user?.id || ''} />
                   </div>
                 ))}
               </TabsContent>

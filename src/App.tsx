@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+// src/App.tsx
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Layout from './components/Layout'
@@ -8,6 +9,7 @@ import ConfiguracoesMestre from './pages/Configuracoes/ConfiguracoesMestre'
 import ConfiguracoesUsuarios from './pages/Configuracoes/ConfiguracoesUsuarios'
 import MeuPerfil from './pages/Configuracoes/MeuPerfil'
 import ResetPassword from './pages/ResetPassword'
+import { useEffect } from 'react'
 
 function BootScreen() {
   return (
@@ -18,17 +20,32 @@ function BootScreen() {
 }
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const { user, booted } = useAuth()
-  if (!booted) return <BootScreen />
+  const { user, loadingAuth } = useAuth()
+  if (loadingAuth) return <BootScreen />
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { user, booted } = useAuth()
-  if (!booted) return <BootScreen />
+  const { user, loadingAuth } = useAuth()
+  if (loadingAuth) return <BootScreen />
   if (user) return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+/** Rota dedicada para sair: chama logout() e redireciona */
+function LogoutRoute() {
+  const { logout } = useAuth()
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    logout();
+    // O onAuthStateChange no AuthContext vai detectar a ausência de sessão e o PublicRoute/PrivateRoute fará o resto.
+    // Para uma experiência mais imediata, podemos forçar o redirecionamento.
+    navigate('/login', { replace: true });
+  }, [logout, navigate]);
+
+  return <BootScreen />
 }
 
 export default function App() {
@@ -44,7 +61,17 @@ export default function App() {
             </PublicRoute>
           }
         />
-        <Route path="/reset-password" element={<ResetPassword />} />
+        {/* reset-password público, mas se estiver logado o PublicRoute redireciona pro "/" */}
+        <Route
+          path="/reset-password"
+          element={
+            <PublicRoute>
+              <ResetPassword />
+            </PublicRoute>
+          }
+        />
+        {/* rota utilitária para logout (use em um botão/link para /logout) */}
+        <Route path="/logout" element={<LogoutRoute />} />
 
         {/* rotas privadas */}
         <Route
@@ -63,6 +90,9 @@ export default function App() {
             <Route path="meu-perfil" element={<MeuPerfil />} />
           </Route>
         </Route>
+
+        {/* fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   )
