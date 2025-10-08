@@ -122,7 +122,7 @@ export default function Dashboard() {
 
   // Base da URL de embed sem pageName
   const reportBaseUrl =
-    "https://app.powerbi.com/reportEmbed?reportId=98cece73-d6dd-40c1-9a0b-3dc84d71af50&autoAuth=true&ctid=a743694b-8593-4647-bafb-ad9faa1cc904";
+    "https://app.powerbi.com/reportEmbed?reportId=8acb1b78-1f4a-4eb2-9dab-b3f5e9c3783d&autoAuth=true&ctid=1b4ff8a1-90f8-4ca6-854d-c5c61aff2ecb";
 
   // URL final com pageName + hides
   const current = pages.find((p) => p.id === activeTab);
