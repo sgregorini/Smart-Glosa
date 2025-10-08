@@ -4,6 +4,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Layout from './components/Layout'
 import HubAcoes from './pages/execucao/HubAcoes'
+import Cronograma from './pages/execucao/Cronograma' // Importa o novo componente
 import { useAuth } from '@/context/AuthContext'
 import ConfiguracoesMestre from './pages/Configuracoes/ConfiguracoesMestre'
 import ConfiguracoesUsuarios from './pages/Configuracoes/ConfiguracoesUsuarios'
@@ -83,6 +84,7 @@ export default function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="execucao/hub" element={<HubAcoes />} />
+          <Route path="execucao/cronograma" element={<Cronograma />} />
 
           <Route path="configuracoes">
             <Route path="mestre" element={<ConfiguracoesMestre />} />

@@ -137,8 +137,8 @@ function CalendarView({
 
       {/* weekdays */}
       <div className="grid grid-cols-7 gap-1 px-1 text-center text-xs text-muted-foreground">
-        {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d) => (
-          <div key={d}>{d}</div>
+        {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, index) => (
+          <div key={index}>{d}</div>
         ))}
       </div>
 

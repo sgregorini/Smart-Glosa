@@ -51,18 +51,11 @@ export default function ConfiguracoesUsuarios() {
   const [responsaveisSemAcesso, setResponsaveisSemAcesso] = useState<Responsavel[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Modal Editar
-  const [openEdit, setOpenEdit] = useState(false)
-  const [editing, setEditing] = useState<Usuario | null>(null)
-  const [nome, setNome] = useState('')
-  const [role, setRole] = useState('')
-  const [idSetor, setIdSetor] = useState<string>('')
+  // Modal Criar/Editar
+  const [editingUser, setEditingUser] = useState<Usuario | null>(null)
 
   // Modal Delete
   const [deleting, setDeleting] = useState<Usuario | null>(null)
-
-  // Modal Criar
-  const [openCreate, setOpenCreate] = useState(false)
   const [newEmail, setNewEmail] = useState('')
   const [newNome, setNewNome] = useState('')
   const [newRole, setNewRole] = useState('user')
@@ -104,24 +97,35 @@ export default function ConfiguracoesUsuarios() {
     return m
   }, [setores])
 
-  const openEditModal = (u: Usuario) => {
-    setEditing(u)
-    setNome(u.nome ?? '')
-    setRole(u.role ?? '')
-    setIdSetor(u.id_setor ?? '')
-    setOpenEdit(true)
+  const handleOpenModal = (userToEdit: Usuario | null = null) => {
+    setEditingUser(userToEdit)
+    if (userToEdit) {
+      // Modo Edição
+      setNewEmail(userToEdit.email)
+      setNewNome(userToEdit.nome ?? '')
+      setNewRole(userToEdit.role ?? 'user')
+      setNewSetor(userToEdit.id_setor ?? '')
+      setNewPassword('') // Limpa o campo de senha
+    } else {
+      // Modo Criação
+      setNewEmail('')
+      setNewNome('')
+      setNewRole('user')
+      setNewSetor('')
+      setNewPassword('')
+    }
   }
 
   const saveEdit = async () => {
-    if (!editing) return
+    if (!editingUser) return
     const { error } = await supabase.from('usuarios').upsert({
-      id: editing.id,
-      nome: nome?.trim() || null,
-      role: role || null,
-      id_setor: idSetor || null,
+      id: editingUser.id,
+      nome: newNome?.trim() || null,
+      role: newRole || null,
+      id_setor: newSetor || null,
     })
     if (error) console.error('[usuarios.upsert] erro:', error)
-    setOpenEdit(false)
+    handleOpenModal(null) // Fecha o modal
     fetchAll()
   }
 
@@ -187,13 +191,7 @@ const createUser = async () => {
 
     console.log('[create-user] ok:', data);
 
-    // Limpa e fecha
-    setOpenCreate(false);
-    setNewEmail('');
-    setNewPassword('');
-    setNewNome('');
-    setNewRole('user');
-    setNewSetor('');
+    handleOpenModal(null) // Limpa e fecha
     fetchAll();
 };
 
@@ -226,7 +224,7 @@ const createUser = async () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Configurações – Usuários</h1>
-        <Button onClick={() => setOpenCreate(true)}>
+        <Button onClick={() => handleOpenModal(null)}>
           <Plus className="mr-2" size={16} /> Adicionar usuário
         </Button>
       </div>
@@ -255,7 +253,7 @@ const createUser = async () => {
                   <div className="col-span-2">{u.id_setor ? setoresMap.get(u.id_setor) : '—'}</div>
                   <div className="col-span-1">{u.confirmado ? '✔️' : '❌'}</div>
                   <div className="col-span-2 flex justify-end gap-2">
-                    <Button variant="outline" size="icon" onClick={() => openEditModal(u)}>
+                    <Button variant="outline" size="icon" onClick={() => handleOpenModal(u)}>
                       <Pencil size={16} />
                     </Button>
                     <Button variant="destructive" size="icon" onClick={() => setDeleting(u)}>
@@ -301,52 +299,6 @@ const createUser = async () => {
         </Card>
       )}
 
-      {/* Modal Editar */}
-      <Dialog open={openEdit} onOpenChange={setOpenEdit}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar usuário</DialogTitle>
-            <DialogDescription>Atualize nome, perfil e setor do usuário selecionado.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm text-gray-600">Nome</label>
-              <Input value={nome} onChange={(e) => setNome(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm text-gray-600">Role</label>
-              <select
-                className="w-full h-10 border rounded-md px-3"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              >
-                <option value="">— selecione —</option>
-                {ROLE_OPTIONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm text-gray-600">Setor</label>
-              <select
-                className="w-full h-10 border rounded-md px-3"
-                value={idSetor}
-                onChange={(e) => setIdSetor(e.target.value)}
-              >
-                <option value="">— sem setor —</option>
-                {setores.map(s => (
-                  <option key={s.id} value={s.id}>{s.nome}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <DialogFooter className="mt-4 flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => setOpenEdit(false)}>Cancelar</Button>
-            <Button onClick={saveEdit}>Salvar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Modal Deletar */}
       <Dialog open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}>
         <DialogContent>
@@ -364,17 +316,21 @@ const createUser = async () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Criar */}
-      <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+      {/* Modal Criar/Editar */}
+      <Dialog open={!!editingUser} onOpenChange={(isOpen) => !isOpen && handleOpenModal(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Adicionar usuário</DialogTitle>
-            <DialogDescription>Preencha e-mail e nome. Se a senha ficar em branco, geramos uma temporária.</DialogDescription>
+            <DialogTitle>{editingUser?.id ? 'Editar usuário' : 'Adicionar usuário'}</DialogTitle>
+            <DialogDescription>
+              {editingUser?.id
+                ? 'Atualize nome, perfil e setor do usuário.'
+                : 'Preencha os dados para criar um novo usuário.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <label className="text-sm text-gray-600">Email</label>
-              <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+              <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} disabled={!!editingUser?.id} />
             </div>
             <div>
               <label className="text-sm text-gray-600">Nome</label>
@@ -384,7 +340,7 @@ const createUser = async () => {
               <label className="text-sm text-gray-600">Role</label>
               <select
                 className="w-full h-10 border rounded-md px-3"
-                value={newRole}
+                value={newRole || ''}
                 onChange={(e) => setNewRole(e.target.value)}
               >
                 {ROLE_OPTIONS.map(r => (
@@ -396,7 +352,7 @@ const createUser = async () => {
               <label className="text-sm text-gray-600">Setor</label>
               <select
                 className="w-full h-10 border rounded-md px-3"
-                value={newSetor}
+                value={newSetor || ''}
                 onChange={(e) => setNewSetor(e.target.value)}
               >
                 <option value="">— sem setor —</option>
@@ -405,19 +361,23 @@ const createUser = async () => {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="text-sm text-gray-600">Senha (opcional)</label>
-              <Input
-                type="password"
-                placeholder="Se ficar vazio, geramos uma temporária"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-              />
-            </div>
+            {!editingUser?.id && (
+              <div>
+                <label className="text-sm text-gray-600">Senha (opcional)</label>
+                <Input
+                  type="password"
+                  placeholder="Se ficar vazio, um convite será enviado"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter className="mt-4 flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => setOpenCreate(false)}>Cancelar</Button>
-            <Button onClick={createUser}>Criar usuário</Button>
+            <Button variant="ghost" onClick={() => handleOpenModal(null)}>Cancelar</Button>
+            <Button onClick={editingUser?.id ? saveEdit : createUser}>
+              {editingUser?.id ? 'Salvar Alterações' : 'Criar usuário'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

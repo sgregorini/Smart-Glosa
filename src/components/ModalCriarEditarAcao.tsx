@@ -315,20 +315,28 @@ export default function ModalCriarEditarAcao({
   }
 
   async function handleSalvar() {
-    if (!descricao || !statusId || !responsavelId) {
-      alert('Preencha ao menos descrição, status e responsável.')
+    const descOk = descricao.trim().length > 0
+    const statusOk = !!statusId
+    const respOk = !!responsavelId
+
+    // Regras: na criação exige responsável; na edição não obriga
+    if (!descOk || !statusOk || (!isEdit && !respOk)) {
+      alert(isEdit
+        ? 'Preencha ao menos descrição e status.'
+        : 'Preencha ao menos descrição, status e responsável.'
+      )
       return
     }
 
     const payload = {
-      acao_descricao: descricao,
-      causa_raiz: causaRaiz,
+      acao_descricao: descricao.trim(),
+      causa_raiz: causaRaiz || null,
       vl_impacto: impacto === '' ? null : impacto,
-      dt_inicio_acao: dataInicio?.toISOString().slice(0, 10),
-      dt_termino_acao: dataFim?.toISOString().slice(0, 10),
-      observacoes,
+      dt_inicio_acao: dataInicio?.toISOString().slice(0, 10) ?? null,
+      dt_termino_acao: dataFim?.toISOString().slice(0, 10) ?? null,
+      observacoes: observacoes || null,
       id_status_acao: statusId,
-      id_responsavel: responsavelId,
+      id_responsavel: responsavelId || null,
       id_setor_responsavel: setorId || null,
     }
 
@@ -346,12 +354,7 @@ export default function ModalCriarEditarAcao({
 
       await Promise.all([
         syncManyToMany({ acaoId, table: 'acoes_glosas', idColumn: 'glosa_id', selectedIds: glosaIds }),
-        syncManyToMany({
-          acaoId,
-          table: 'acoes_operadoras',
-          idColumn: 'operadora_id',
-          selectedIds: operadoraIds,
-        }),
+        syncManyToMany({ acaoId, table: 'acoes_operadoras', idColumn: 'operadora_id', selectedIds: operadoraIds }),
       ])
 
       onSave()
@@ -559,7 +562,6 @@ export default function ModalCriarEditarAcao({
             setModalNovoResponsavel(false)
           }}
         />
-
       </DialogContent>
     </Dialog>
   )
