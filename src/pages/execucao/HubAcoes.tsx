@@ -21,7 +21,7 @@ import type { AcaoView, EtapaDetalhe, StatusAcaoTipo, Responsavel } from '@/type
 import { useAuth } from '@/context/AuthContext';
 
 export default function HubAcoes() {
-  const { user, role, currentOrgId } = useAuth();
+  const { user, role, responsavelId } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -95,22 +95,22 @@ export default function HubAcoes() {
 
   async function fetchAcoes() {
     // Só busca se o papel (role) estiver definido.
-    // Se não for admin, também precisa do ID do setor (currentOrgId).
-    if (!role || (role !== 'admin' && !currentOrgId)) {
+    if (!role) {
       // Ainda não está pronto para buscar, evita chamadas desnecessárias.
       return;
     }
 
     setLoading(true);
 
-    // CORREÇÃO FINAL: A sintaxe correta para buscar de uma tabela de junção (many-to-many)
-    // é selecionar a tabela de junção e, dentro dela, a tabela final.
-    // O Supabase aninhará os dados, e o código que renderiza as "caixinhas" já espera esse formato.
-    // O alias `glosas_json` e `operadoras_json` é importante para manter a compatibilidade com o resto do componente.
     let query = supabase.from('vw_acoes_detalhe').select('*, glosas_json:acoes_glosas(glosas:glosa_id(*)), operadoras_json:acoes_operadoras(operadoras:operadora_id(*))', { count: 'exact' });
 
-    // A MÁGICA ACONTECE AQUI: Só aplica o filtro de setor se o usuário NÃO for admin.
-    if (role !== 'admin') query = query.eq('id_setor', currentOrgId);
+    // REGRAS DE PERMISSÃO:
+    // - admin/manager: veem tudo.
+    // - user/viewer: veem apenas as ações pelas quais são responsáveis.
+    if (role && !['admin', 'manager'].includes(role)) {
+      // Se não houver um ID de responsável, não mostra nenhuma ação para evitar vazamento de dados.
+      query = query.eq('id_responsavel', responsavelId || '00000000-0000-0000-0000-000000000000');
+    }
 
     if (statusFilter) query = query.eq('id_status_acao', statusFilter);
     if (responsavelFilter) query = query.eq('id_responsavel', responsavelFilter);
@@ -189,19 +189,13 @@ export default function HubAcoes() {
 
   // opções de filtro (carrega quando sessão estiver pronta)
   useEffect(() => {
-    // Se não for admin, precisa do ID do setor. Se for admin, pode carregar sem ele.
-    if (!currentOrgId && role !== 'admin') return;
+    if (!role) return;
 
     let cancelled = false;
     (async () => {
-      // Para admin, busca de todos os setores. Para outros, busca do seu setor.
       let responsaveisQuery = supabase.from('responsaveis').select('*');
+      // A busca de status não deve ser filtrada por organização, pois são tipos globais.
       let statusQuery = supabase.from('status_acao_tipos').select('*');
-
-      if (role !== 'admin' && currentOrgId) {
-        responsaveisQuery = responsaveisQuery.eq('id_setor', currentOrgId);
-        statusQuery = statusQuery.eq('id_setor', currentOrgId);
-      }
 
       const [{ data: responsavelData }, { data: statusData }] = await Promise.all([
         responsaveisQuery.order('nome', { ascending: true }),
@@ -215,13 +209,12 @@ export default function HubAcoes() {
     return () => {
       cancelled = true;
     };
-  }, [currentOrgId, role]);
+  }, [role]);
 
   // carregar lista – apenas quando booted && user
   useEffect(() => {
-    // A própria função fetchAcoes agora tem a guarda para só executar quando tudo estiver pronto.
     fetchAcoes();
-  }, [user, currentOrgId, role, statusFilter, responsavelFilter, searchTerm, currentPage]);
+  }, [user, role, responsavelId, statusFilter, responsavelFilter, searchTerm, currentPage]);
 
   // carregar etapas quando abrir detalhes
   useEffect(() => {

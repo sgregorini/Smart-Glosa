@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState } from 'react'
 import { Database, Loader2, Download } from "lucide-react";
+import { useAuth } from '@/context/AuthContext'
 
 /** -----------------------------
  *  Botão + Modal "Zero Glosa"
@@ -9,6 +10,7 @@ import { Database, Loader2, Download } from "lucide-react";
  *  - Integra com o servidor: POST /api/robo/:id
  */
 function ZeroGlosaExport() {
+  const { role } = useAuth()
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -44,6 +46,11 @@ function ZeroGlosaExport() {
       setLoading(false);
     }
   };
+
+  // Apenas admins e gestores podem ver este botão
+  if (!['admin', 'manager'].includes(role || '')) {
+    return null
+  }
 
   return (
     <>

@@ -1,7 +1,7 @@
 // src/components/Layout.tsx
 import React, { useEffect, useMemo, useState } from 'react'
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { BarChart2, Play, Target, Settings, ChevronDown, ChevronRight, LogOut, Menu } from 'lucide-react'
+import { Outlet, NavLink, useLocation, useNavigate, Link } from 'react-router-dom'
+import { BarChart2, Play, Settings, ChevronDown, ChevronRight, LogOut, Menu, User as UserIcon } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 function classNames(...xs: Array<string | false | null | undefined>) {
@@ -30,8 +30,7 @@ function emailToNiceName(email?: string | null) {
 }
 
 export default function Layout() {
-  // removi "loading" porque não existe no contexto; se quiser usar, pegue loadingAuth
-  const { usuarioDetalhes: perfil, user, booted, logout } = useAuth()
+  const { usuarioDetalhes: perfil, user, booted, logout, role } = useAuth()
 
   // Estado da UI
   const [collapsed, setCollapsed] = useState<boolean>(() => localStorage.getItem('sg_sidebar_collapsed') === '1')
@@ -136,14 +135,6 @@ export default function Layout() {
                 >
                   Dashboard
                 </NavLink>
-                <NavLink
-                  to="/analytics"
-                  className={({ isActive }) =>
-                    classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
-                  }
-                >
-                  Analytics
-                </NavLink>
               </div>
             )}
           </div>
@@ -186,67 +177,59 @@ export default function Layout() {
             )}
           </div>
 
-          {/* Metas */}
-          <div className="mb-2">
-            <NavLink
-              to="/metas"
-              className={({ isActive }) =>
-                classNames('w-full flex items-center justify-between px-3 py-2 rounded-lg text-gray-700 transition', isActive ? 'bg-yellow-400 text-white' : 'hover:bg-gray-100')
-              }
-            >
-              <div className="flex items-center space-x-2">
-                <Target size={20} />
-                {!collapsed && <span>Metas</span>}
-              </div>
-              {!collapsed && <ChevronRight size={16} />}
-            </NavLink>
+          {/* Separador visual */}
+          <div className="px-3 my-2">
+            <div className="border-t border-gray-200"></div>
           </div>
 
-          {/* Configurações */}
-          <div className="mb-2">
-            <button
-              onClick={() => setOpenConfig(!openConfig)}
-              className={classNames(
-                'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
-                isConfigActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+          {/* Configurações (Apenas Admins) */}
+          {role === 'admin' && (
+            <div className="mb-2">
+              <button
+                onClick={() => setOpenConfig(!openConfig)}
+                className={classNames(
+                  'w-full flex items-center justify-between px-3 py-2 rounded-lg font-medium',
+                  isConfigActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100'
+                )}
+              >
+                <div className="flex items-center space-x-2">
+                  <Settings size={20} />
+                  {!collapsed && <span>Admin</span>}
+                </div>
+                {!collapsed && (openConfig ? <ChevronDown size={16} className="transition" /> : <ChevronRight size={16} className="transition" />)}
+              </button>
+
+              {openConfig && !collapsed && (
+                <div className="mt-1 ml-8 space-y-1">
+                  <NavLink
+                    to="/configuracoes/mestre"
+                    className={({ isActive }) =>
+                      classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
+                    }
+                  >
+                    Painel Mestre
+                  </NavLink>
+                  <NavLink
+                    to="/configuracoes/usuarios"
+                    className={({ isActive }) =>
+                      classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
+                    }
+                  >
+                    Usuários
+                  </NavLink>
+                </div>
               )}
-            >
-              <div className="flex items-center space-x-2">
-                <Settings size={20} />
-                {!collapsed && <span>Configurações</span>}
-              </div>
-              {!collapsed && (openConfig ? <ChevronDown size={16} className="transition" /> : <ChevronRight size={16} className="transition" />)}
-            </button>
+            </div>
+          )}
 
-            {openConfig && !collapsed && (
-              <div className="mt-1 ml-8 space-y-1">
-                <NavLink
-                  to="/configuracoes/mestre"
-                  className={({ isActive }) =>
-                    classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
-                  }
-                >
-                  Painel Mestre
-                </NavLink>
-                <NavLink
-                  to="/configuracoes/usuarios"
-                  className={({ isActive }) =>
-                    classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
-                  }
-                >
-                  Usuários
-                </NavLink>
-                <NavLink
-                  to="/configuracoes/meu-perfil"
-                  className={({ isActive }) =>
-                    classNames('flex items-center px-3 py-2 rounded-md transition', isActive ? 'bg-yellow-400 text-white' : 'text-gray-700 hover:bg-gray-100')
-                  }
-                >
-                  Meu Perfil
-                </NavLink>
-              </div>
-            )}
-          </div>
+          {/* Meu Perfil (Todos os usuários) */}
+          <NavLink
+            to="/configuracoes/meu-perfil"
+            className={({ isActive }) => classNames('flex items-center space-x-2 px-3 py-2 rounded-lg font-medium', isActive ? 'bg-yellow-100 text-gray-900' : 'text-gray-800 hover:bg-gray-100')}
+          >
+            <UserIcon size={20} />
+            {!collapsed && <span>Meu Perfil</span>}
+          </NavLink>
         </nav>
 
         {/* Rodapé da sidebar: perfil compacto */}

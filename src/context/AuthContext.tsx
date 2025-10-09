@@ -17,6 +17,7 @@ export interface AuthContextType {
   usuarioDetalhes: Usuario | null
   currentOrgId: string | null
   role: string | null
+  responsavelId: string | null
   booted: boolean
   loadingAuth: boolean
   login: (email: string, pass: string) => Promise<boolean>
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [loadingAuth, setLoadingAuth] = useState(true)
   const [currentOrgId, setCurrentOrgId] = useState<string | null>(null)
   const [usuarioDetalhes, setUsuarioDetalhes] = useState<Usuario | null>(null)
+  const [responsavelId, setResponsavelId] = useState<string | null>(null)
 
   // ===== Boot inicial =====
   useEffect(() => {
@@ -69,6 +71,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!userId) {
       setUsuarioDetalhes(null)
       setCurrentOrgId(null)
+      setResponsavelId(null)
       return
     }
     try {
@@ -80,12 +83,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         .single()
       if (error) throw error
       setUsuarioDetalhes(data as Usuario)
-      // Se você tiver org em outra tabela/view, ajuste aqui.
-      setCurrentOrgId((data as any)?.id_setor ?? null)
+
+      // Busca o ID de responsável correspondente ao email do usuário
+      const userEmail = user?.email;
+      if (userEmail) {
+        const { data: respData, error: respError } = await supabase
+          .from('responsaveis')
+          .select('id')
+          .eq('email', userEmail)
+          .single();
+        if (respData) setResponsavelId(respData.id);
+      }
     } catch (err) {
       console.error('Erro ao buscar perfil do usuário:', err)
       setUsuarioDetalhes(null)
-      setCurrentOrgId(null)
+      setResponsavelId(null)
     } finally {
       setLoadingAuth(false)
     }
@@ -111,6 +123,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } else {
         setUsuarioDetalhes(null)
         setCurrentOrgId(null)
+        setResponsavelId(null)
       }
     } catch (err) {
       console.error('Erro ao atualizar user:', err)
@@ -123,6 +136,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     else {
       setUsuarioDetalhes(null)
       setCurrentOrgId(null)
+      setResponsavelId(null)
     }
   }, [user, fetchUsuarioDetalhes])
 
@@ -139,6 +153,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUser(null)
     setUsuarioDetalhes(null)
     setCurrentOrgId(null)
+    setResponsavelId(null)
   }
 
   const value: AuthContextType = {
@@ -147,6 +162,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     usuarioDetalhes,
     currentOrgId,
     role: usuarioDetalhes?.role ?? null,
+    responsavelId,
     booted,
     loadingAuth,
     login,

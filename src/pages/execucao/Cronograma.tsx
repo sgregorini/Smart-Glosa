@@ -48,7 +48,7 @@ const CustomTooltipContent: React.FC<{ task: CustomTask }> = ({ task }) => {
 };
 
 export default function Cronograma() {
-  const { user, role, currentOrgId } = useAuth()
+  const { user, role, responsavelId } = useAuth()
 
   // dados
   const [acoes, setAcoes] = useState<AcaoView[]>([])
@@ -80,7 +80,15 @@ export default function Cronograma() {
       if (!user) return
       setLoading(true)
       try {
-        const { data: acoesRaw, error: e1 } = await supabase.from("vw_acoes_detalhadas").select("*")
+        let acoesQuery = supabase.from("vw_acoes_detalhadas").select("*");
+
+        // REGRAS DE PERMISSÃO:
+        // - admin/manager: veem tudo.
+        // - user/viewer: veem apenas as ações pelas quais são responsáveis.
+        if (role && !['admin', 'manager'].includes(role)) {
+          acoesQuery = acoesQuery.eq('id_responsavel', responsavelId || '00000000-0000-0000-0000-000000000000');
+        }
+        const { data: acoesRaw, error: e1 } = await acoesQuery;
         if (e1) throw e1
         setAcoes(Array.isArray(acoesRaw) ? (acoesRaw as AcaoView[]) : [])
 
@@ -109,13 +117,24 @@ export default function Cronograma() {
       }
     }
     load()
-  }, [user, role, currentOrgId])
+  }, [user, role, responsavelId])
 
   // ------------------------------------------------------------
   // Handlers de Interação com o Gantt
   // ------------------------------------------------------------
 
     const handleDateChange = async (task: Task, children: Task[]) => {
+        if (role === 'viewer') {
+          toast.warning("Você não tem permissão para alterar datas.");
+          return;
+        }
+        
+        // Usuários 'user' só podem editar suas próprias tarefas
+        const customTask = task as CustomTask;
+        if (role === 'user' && customTask.original?.id_responsavel !== responsavelId) {
+          toast.warning("Você só pode alterar tarefas pelas quais é responsável.");
+          return;
+        }
         const startDate = task.start.toISOString().slice(0, 10);
         const endDate = task.end.toISOString().slice(0, 10);
 
@@ -145,6 +164,17 @@ export default function Cronograma() {
     };
   
   const handleProgressChange = async (task: Task) => {
+    if (role === 'viewer') {
+      toast.warning("Você não tem permissão para alterar o progresso.");
+      return;
+    }
+
+    const customTask = task as CustomTask;
+    if (role === 'user' && customTask.original?.id_responsavel !== responsavelId) {
+      toast.warning("Você só pode alterar o progresso de tarefas pelas quais é responsável.");
+      return;
+    }
+
     if (task.type === 'project') return;
     const updates = { porcentagem_conclusao_etapa: task.progress };
     const { error } = await supabase.from('etapas').update(updates).eq('id', task.id);

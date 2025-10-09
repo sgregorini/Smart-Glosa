@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { useAuth } from '@/context/AuthContext'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Pencil, Trash2, Plus, Send } from 'lucide-react'
+import { Pencil, Trash2, Plus, Send, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
 // Tipos
@@ -46,6 +47,7 @@ function gerarSenhaTemporaria() {
 }
 
 export default function ConfiguracoesUsuarios() {
+  const { role, loadingAuth } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [setores, setSetores] = useState<Setor[]>([])
   const [responsaveisSemAcesso, setResponsaveisSemAcesso] = useState<Responsavel[]>([])
@@ -218,6 +220,23 @@ const createUser = async () => {
 
     // Atualiza as listas para mover o responsável para a lista de usuários
     fetchAll()
+  }
+
+  // Bloqueio de acesso para não-admins
+  if (loadingAuth) {
+    return <div className="p-6 text-center">Verificando permissões...</div>
+  }
+
+  if (role !== 'admin') {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center text-center h-96">
+        <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="text-2xl font-bold">Acesso Negado</h1>
+        <p className="text-muted-foreground mt-2">
+          Você não tem permissão para acessar esta página.
+        </p>
+      </div>
+    )
   }
 
   return (
