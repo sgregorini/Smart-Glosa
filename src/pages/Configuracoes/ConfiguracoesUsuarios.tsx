@@ -16,76 +16,61 @@ type Usuario = {
   last_sign_in_at: string | null
   confirmado: boolean
   nome: string | null
-  role: string | null
+  role: string | null // Este 'role' vem da VIEW e é o 'role_slug'
   id_setor: string | null
 }
-
-type Responsavel = {
-  id: string
-  nome: string
-  email: string
-  id_setor: string | null
-}
-
+type Role = { slug: string; nome: string }
 type Setor = { id: string; nome: string }
-
-// Se você quiser buscar da tabela roles, deixe este array vazio e carregue do BD.
-// Por ora, usamos opções fixas.
-const ROLE_OPTIONS = [
-  { value: 'admin', label: 'Administrador' },
-  { value: 'manager', label: 'Gestor' },
-  { value: 'user', label: 'Usuário' },
-  { value: 'viewer', label: 'Somente leitura' },
-]
-
-// gera senha forte quando o campo vier em branco (evita 400 da Edge Function)
-function gerarSenhaTemporaria() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*?'
-  let s = 'Tmp!'
-  for (let i = 0; i < 12; i++) s += chars[Math.floor(Math.random() * chars.length)]
-  return s
-}
+type Responsavel = { id: string; nome: string; email: string; id_setor: string | null }
 
 export default function ConfiguracoesUsuarios() {
-  const { role, loadingAuth } = useAuth()
+  const { role: userRole, loadingAuth } = useAuth()
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [setores, setSetores] = useState<Setor[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
   const [responsaveisSemAcesso, setResponsaveisSemAcesso] = useState<Responsavel[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Modal Criar/Editar
+  // Estados do Modal
+  const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<Usuario | null>(null)
-
-  // Modal Delete
-  const [deleting, setDeleting] = useState<Usuario | null>(null)
-  const [newEmail, setNewEmail] = useState('')
-  const [newNome, setNewNome] = useState('')
-  const [newRole, setNewRole] = useState('user')
-  const [newSetor, setNewSetor] = useState<string>('')
-  const [newPassword, setNewPassword] = useState('') // se vazio, geramos senha temporária
+  const [deletingUser, setDeletingUser] = useState<Usuario | null>(null)
+  
+  // Campos do formulário
+  const [formData, setFormData] = useState({
+    email: '',
+    nome: '',
+    role_slug: 'user',
+    id_setor: '',
+    password: '',
+  })
 
   const fetchAll = async () => {
     setLoading(true)
-    const [{ data: u, error: eu }, { data: s, error: es }, { data: r, error: er }] = await Promise.all([
+    const [
+      { data: u, error: eu },
+      { data: s, error: es },
+      { data: r, error: er },
+      { data: ro, error: ero },
+    ] = await Promise.all([
       supabase.from('vw_usuarios_detalhes').select('*').order('created_at', { ascending: false }),
       supabase.from('setores').select('id, nome').order('nome'),
       supabase.from('responsaveis').select('*'),
+      supabase.from('roles').select('slug, nome'),
     ])
 
     if (eu) console.error('[vw_usuarios_detalhes] erro:', eu)
     if (es) console.error('[setores] erro:', es)
     if (er) console.error('[responsaveis] erro:', er)
+    if (ero) console.error('[roles] erro:', ero)
 
     const usuariosData = (u as Usuario[]) ?? []
-    const setoresData = (s as Setor[]) ?? []
-    const responsaveisData = (r as Responsavel[]) ?? []
-
     setUsuarios(usuariosData)
-    setSetores(setoresData)
+    setSetores((s as Setor[]) ?? [])
+    setRoles((ro as Role[]) ?? [])
 
-    // Filtra responsáveis que ainda não são usuários (comparando por email)
     const emailsDeUsuarios = new Set(usuariosData.map(usr => usr.email.toLowerCase()))
-    const semAcesso = responsaveisData.filter(resp => !emailsDeUsuarios.has(resp.email.toLowerCase()))
+    const semAcesso = ((r as Responsavel[]) ?? []).filter(resp => !emailsDeUsuarios.has(resp.email.toLowerCase()))
     setResponsaveisSemAcesso(semAcesso)
 
     setLoading(false)
@@ -93,148 +78,108 @@ export default function ConfiguracoesUsuarios() {
 
   useEffect(() => { fetchAll() }, [])
 
-  const setoresMap = useMemo(() => {
-    const m = new Map<string, string>()
-    setores.forEach(s => m.set(s.id, s.nome))
-    return m
-  }, [setores])
+  const setoresMap = useMemo(() => new Map(setores.map(s => [s.id, s.nome])), [setores])
 
-  const handleOpenModal = (userToEdit: Usuario | null = null) => {
-    setEditingUser(userToEdit)
-    if (userToEdit) {
-      // Modo Edição
-      setNewEmail(userToEdit.email)
-      setNewNome(userToEdit.nome ?? '')
-      setNewRole(userToEdit.role ?? 'user')
-      setNewSetor(userToEdit.id_setor ?? '')
-      setNewPassword('') // Limpa o campo de senha
+  const openModal = (user: Usuario | null = null) => {
+    setEditingUser(user)
+    if (user) {
+      setFormData({
+        email: user.email,
+        nome: user.nome ?? '',
+        role_slug: user.role ?? 'user',
+        id_setor: user.id_setor ?? '',
+        password: '',
+      })
     } else {
-      // Modo Criação
-      setNewEmail('')
-      setNewNome('')
-      setNewRole('user')
-      setNewSetor('')
-      setNewPassword('')
+      setFormData({ email: '', nome: '', role_slug: 'user', id_setor: '', password: '' })
     }
+    setIsModalOpen(true)
   }
+  
+  const closeModal = () => setIsModalOpen(false)
 
-  const saveEdit = async () => {
-    if (!editingUser) return
-    const { error } = await supabase.from('usuarios').upsert({
-      id: editingUser.id,
-      nome: newNome?.trim() || null,
-      role: newRole || null,
-      id_setor: newSetor || null,
-    })
-    if (error) console.error('[usuarios.upsert] erro:', error)
-    handleOpenModal(null) // Fecha o modal
+  const handleFormChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+  
+  const handleSave = async () => {
+    if (editingUser) { // Modo Edição
+      const { error: errorUsuario } = await supabase
+        .from('usuarios')
+        .update({ nome: formData.nome.trim(), id_setor: formData.id_setor || null })
+        .eq('id', editingUser.id)
+
+      const { error: errorRole } = await supabase
+        .from('usuarios_roles')
+        .upsert({ user_id: editingUser.id, role_slug: formData.role_slug })
+
+      if (errorUsuario || errorRole) {
+        toast.error('Erro ao atualizar usuário.')
+        console.error('Update error:', errorUsuario || errorRole)
+      } else {
+        toast.success('Usuário atualizado com sucesso!')
+      }
+
+    } else { // Modo Criação
+      if (!formData.email || !formData.nome) {
+        return toast.error('Preencha Email e Nome.')
+      }
+      
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        method: 'POST',
+        body: {
+          email: formData.email.trim(),
+          password: formData.password,
+          nome: formData.nome.trim(),
+          role_slug: formData.role_slug,
+          id_setor: formData.id_setor || null,
+        },
+      })
+
+      if (error) {
+        toast.error('Erro ao criar usuário', { description: error.message })
+        console.error('[invoke-create] erro:', error)
+      } else {
+        toast.success('Usuário criado com sucesso!')
+      }
+    }
+    closeModal()
     fetchAll()
   }
-
+  
   const confirmDelete = async () => {
-      if (!deleting) return;
-
-      // Call the Edge Function to handle the deletion securely on the server.
-      try {
-          const { data, error } = await supabase.functions.invoke('delete-user', {
-              method: 'POST',
-              body: { id: deleting.id },
-          });
-
-          if (error) {
-              console.error('[invoke-delete] erro:', error);
-              // Provide a user-friendly message.
-              alert('Não foi possível excluir o usuário. Por favor, tente novamente ou entre em contato com o suporte.');
-              return;
-          }
-
-          console.log('[invoke-delete] ok:', data);
-
-      } catch (e) {
-          console.error('[invoke-delete] exception:', e);
-          alert('Erro ao se conectar com o servidor. Verifique sua conexão.');
-      } finally {
-          // Clear the state and refresh the list regardless of success or failure.
-          setDeleting(null);
-          fetchAll();
-      }
-  };
-
-const createUser = async () => {
-    const email = String(newEmail ?? '').trim();
-    const nome = String(newNome ?? '').trim();
-    const password = String(newPassword ?? '');
-    const role = newRole || 'user';
-    const id_setor = newSetor || null;
-
-    if (!email || !nome) {
-      alert('Preencha Email e Nome.');
-      return;
-    }
-
-    if (password && password.length < 6) {
-      alert('A senha deve ter pelo menos 6 caracteres, ou deixe em branco para enviar convite.');
-      return;
-    }
-
-    const payload = { email, password, nome, role, id_setor };
-    console.log('[create-user] payload =>', JSON.stringify(payload));
-
-    const { data, error } = await supabase.functions.invoke('create-user', {
-      method: 'POST',
-      body: payload,
-    });
-
+    if (!deletingUser) return
+    const { data, error } = await supabase.functions.invoke('delete-user', { body: { id: deletingUser.id } })
     if (error) {
-      console.error('[invoke] erro:', error);
-      alert(`Erro ao criar usuário: ${error.message}`);
-      return;
+      toast.error(`Erro ao excluir ${deletingUser.email}`, { description: error.message })
+    } else {
+      toast.success('Usuário excluído com sucesso!')
     }
-
-    console.log('[create-user] ok:', data);
-
-    handleOpenModal(null) // Limpa e fecha
-    fetchAll();
-};
+    setDeletingUser(null)
+    fetchAll()
+  }
 
   const convidarResponsavel = async (responsavel: Responsavel) => {
     const { nome, email, id_setor } = responsavel
-    const role = 'user' // Papel padrão para novos convidados
-
     const { data, error } = await supabase.functions.invoke('create-user', {
-      method: 'POST',
-      body: { email, nome, role, id_setor },
+      body: { email, nome, role_slug: 'user', id_setor },
     })
 
     if (error) {
-      console.error('[invoke-invite] erro:', error)
-      toast.error(`Erro ao convidar ${nome}`, {
-        description: error.message,
-      })
-      return
+      toast.error(`Erro ao convidar ${nome}`, { description: error.message })
+    } else {
+      toast.success(`Convite enviado para ${nome}!`)
     }
-
-    toast.success(`Convite enviado para ${nome}!`, {
-      description: `O usuário receberá um e-mail para definir sua senha.`,
-    })
-
-    // Atualiza as listas para mover o responsável para a lista de usuários
     fetchAll()
   }
 
-  // Bloqueio de acesso para não-admins
-  if (loadingAuth) {
-    return <div className="p-6 text-center">Verificando permissões...</div>
-  }
-
-  if (role !== 'admin') {
+  if (loadingAuth) return <div className="p-6 text-center">Verificando permissões...</div>
+  if (userRole !== 'admin') {
     return (
       <div className="p-6 flex flex-col items-center justify-center text-center h-96">
         <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
         <h1 className="text-2xl font-bold">Acesso Negado</h1>
-        <p className="text-muted-foreground mt-2">
-          Você não tem permissão para acessar esta página.
-        </p>
+        <p className="text-muted-foreground mt-2">Você não tem permissão para acessar esta página.</p>
       </div>
     )
   }
@@ -243,18 +188,16 @@ const createUser = async () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Configurações – Usuários</h1>
-        <Button onClick={() => handleOpenModal(null)}>
+        <Button onClick={() => openModal()}>
           <Plus className="mr-2" size={16} /> Adicionar usuário
         </Button>
       </div>
-
+      
       <Card>
         <CardContent className="p-4">
-          {loading ? (
-            <div className="text-sm text-gray-500">Carregando…</div>
-          ) : usuarios.length === 0 ? (
-            <div className="text-sm text-gray-500">Nenhum usuário encontrado.</div>
-          ) : (
+          {loading ? ( <div className="text-sm text-gray-500">Carregando…</div> ) 
+                   : usuarios.length === 0 ? ( <div className="text-sm text-gray-500">Nenhum usuário encontrado.</div>) 
+                   : (
             <div className="border rounded-lg overflow-hidden">
               <div className="grid grid-cols-12 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600">
                 <div className="col-span-3">Email</div>
@@ -268,16 +211,12 @@ const createUser = async () => {
                 <div key={u.id} className="grid grid-cols-12 px-4 py-2 border-t items-center text-sm">
                   <div className="col-span-3 truncate">{u.email}</div>
                   <div className="col-span-2 truncate">{u.nome ?? '—'}</div>
-                  <div className="col-span-2">{u.role ?? '—'}</div>
-                  <div className="col-span-2">{u.id_setor ? setoresMap.get(u.id_setor) : '—'}</div>
+                  <div className="col-span-2 capitalize">{u.role ?? '—'}</div>
+                  <div className="col-span-2">{setoresMap.get(u.id_setor || '') ?? '—'}</div>
                   <div className="col-span-1">{u.confirmado ? '✔️' : '❌'}</div>
                   <div className="col-span-2 flex justify-end gap-2">
-                    <Button variant="outline" size="icon" onClick={() => handleOpenModal(u)}>
-                      <Pencil size={16} />
-                    </Button>
-                    <Button variant="destructive" size="icon" onClick={() => setDeleting(u)}>
-                      <Trash2 size={16} />
-                    </Button>
+                    <Button variant="outline" size="icon" onClick={() => openModal(u)}><Pencil size={16} /></Button>
+                    <Button variant="destructive" size="icon" onClick={() => setDeletingUser(u)}><Trash2 size={16} /></Button>
                   </div>
                 </div>
               ))}
@@ -286,7 +225,6 @@ const createUser = async () => {
         </CardContent>
       </Card>
 
-      {/* Card Responsáveis sem Acesso */}
       {responsaveisSemAcesso.length > 0 && (
         <Card>
           <CardHeader>
@@ -296,107 +234,80 @@ const createUser = async () => {
             </p>
           </CardHeader>
           <CardContent className="p-4">
-            <div className="border rounded-lg overflow-hidden">
-              <div className="grid grid-cols-12 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600">
-                <div className="col-span-4">Nome</div>
-                <div className="col-span-4">Email</div>
-                <div className="col-span-4 text-right">Ação</div>
-              </div>
-              {responsaveisSemAcesso.map(r => (
-                <div key={r.id} className="grid grid-cols-12 px-4 py-2 border-t items-center text-sm">
-                  <div className="col-span-4 truncate font-medium">{r.nome}</div>
-                  <div className="col-span-4 truncate">{r.email}</div>
-                  <div className="col-span-4 flex justify-end">
-                    <Button variant="outline" size="sm" onClick={() => convidarResponsavel(r)}>
-                      <Send size={14} className="mr-2" /> Convidar
-                    </Button>
-                  </div>
+             <div className="border rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 bg-gray-50 px-4 py-2 text-xs font-medium text-gray-600">
+                  <div className="col-span-4">Nome</div>
+                  <div className="col-span-4">Email</div>
+                  <div className="col-span-4 text-right">Ação</div>
                 </div>
-              ))}
-            </div>
+                {responsaveisSemAcesso.map(r => (
+                  <div key={r.id} className="grid grid-cols-12 px-4 py-2 border-t items-center text-sm">
+                    <div className="col-span-4 truncate font-medium">{r.nome}</div>
+                    <div className="col-span-4 truncate">{r.email}</div>
+                    <div className="col-span-4 flex justify-end">
+                      <Button variant="outline" size="sm" onClick={() => convidarResponsavel(r)}>
+                        <Send size={14} className="mr-2" /> Convidar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Modal Deletar */}
-      <Dialog open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}>
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Excluir usuário</DialogTitle>
-            <DialogDescription>Essa ação remove o usuário do Auth. Recomendado fazer via Edge Function.</DialogDescription>
+            <DialogTitle>{editingUser ? 'Editar usuário' : 'Adicionar usuário'}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-gray-600">
-            Tem certeza que deseja excluir "{deleting?.email}"?
-          </p>
-          <DialogFooter className="mt-4 flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => setDeleting(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={confirmDelete}>Confirmar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Criar/Editar */}
-      <Dialog open={!!editingUser} onOpenChange={(isOpen) => !isOpen && handleOpenModal(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingUser?.id ? 'Editar usuário' : 'Adicionar usuário'}</DialogTitle>
-            <DialogDescription>
-              {editingUser?.id
-                ? 'Atualize nome, perfil e setor do usuário.'
-                : 'Preencha os dados para criar um novo usuário.'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 py-4">
             <div>
-              <label className="text-sm text-gray-600">Email</label>
-              <Input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} disabled={!!editingUser?.id} />
+              <label className="text-sm font-medium">Email</label>
+              <Input value={formData.email} onChange={(e) => handleFormChange('email', e.target.value)} disabled={!!editingUser} />
             </div>
             <div>
-              <label className="text-sm text-gray-600">Nome</label>
-              <Input value={newNome} onChange={(e) => setNewNome(e.target.value)} />
+              <label className="text-sm font-medium">Nome</label>
+              <Input value={formData.nome} onChange={(e) => handleFormChange('nome', e.target.value)} />
             </div>
             <div>
-              <label className="text-sm text-gray-600">Role</label>
-              <select
-                className="w-full h-10 border rounded-md px-3"
-                value={newRole || ''}
-                onChange={(e) => setNewRole(e.target.value)}
-              >
-                {ROLE_OPTIONS.map(r => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
+              <label className="text-sm font-medium">Role</label>
+              <select className="w-full h-10 border rounded-md px-3 bg-white" value={formData.role_slug} onChange={(e) => handleFormChange('role_slug', e.target.value)}>
+                {roles.map(r => (
+                  <option key={r.slug} value={r.slug}>{r.nome}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600">Setor</label>
-              <select
-                className="w-full h-10 border rounded-md px-3"
-                value={newSetor || ''}
-                onChange={(e) => setNewSetor(e.target.value)}
-              >
+              <label className="text-sm font-medium">Setor</label>
+              <select className="w-full h-10 border rounded-md px-3 bg-white" value={formData.id_setor} onChange={(e) => handleFormChange('id_setor', e.target.value)}>
                 <option value="">— sem setor —</option>
-                {setores.map(s => (
-                  <option key={s.id} value={s.id}>{s.nome}</option>
-                ))}
+                {setores.map(s => (<option key={s.id} value={s.id}>{s.nome}</option>))}
               </select>
             </div>
-            {!editingUser?.id && (
+            {!editingUser && (
               <div>
-                <label className="text-sm text-gray-600">Senha (opcional)</label>
-                <Input
-                  type="password"
-                  placeholder="Se ficar vazio, um convite será enviado"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
+                <label className="text-sm font-medium">Senha (opcional)</label>
+                <Input type="password" placeholder="Se vazio, um convite será enviado" value={formData.password} onChange={(e) => handleFormChange('password', e.target.value)} />
               </div>
             )}
           </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={closeModal}>Cancelar</Button>
+            <Button onClick={handleSave}>{editingUser ? 'Salvar Alterações' : 'Criar usuário'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={!!deletingUser} onOpenChange={() => setDeletingUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir usuário</DialogTitle>
+            <DialogDescription>Tem certeza que deseja excluir "{deletingUser?.email}"?</DialogDescription>
+          </DialogHeader>
           <DialogFooter className="mt-4 flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => handleOpenModal(null)}>Cancelar</Button>
-            <Button onClick={editingUser?.id ? saveEdit : createUser}>
-              {editingUser?.id ? 'Salvar Alterações' : 'Criar usuário'}
-            </Button>
+            <Button variant="ghost" onClick={() => setDeletingUser(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Confirmar Exclusão</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
